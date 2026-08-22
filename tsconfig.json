@@ -1,0 +1,19 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/plugin-contract" },
+    { "path": "./packages/domain" },
+    { "path": "./packages/kernel" },
+    { "path": "./packages/storage-sqlite" },
+    { "path": "./packages/host" },
+    { "path": "./packages/http-rpc" },
+    { "path": "./plugins/core-types" },
+    { "path": "./plugins/cli" },
+    { "path": "./plugins/http" },
+    { "path": "./plugins/webui" },
+    { "path": "./plugins/user" },
+    { "path": "./plugins/dataviews" },
+    { "path": "./plugins/snapshot" },
+    { "path": "./plugins/mcp" }
+  ]
+}
