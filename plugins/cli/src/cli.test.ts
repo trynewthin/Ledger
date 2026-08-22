@@ -125,11 +125,19 @@ describe('ledger CLI e2e（冷引导路径）', () => {
     const types = await ledger('type', 'list', '--json')
     const typeList = parseJson(types.stdout)
     expect(typeList.some((t: any) => t.key === 'food')).toBe(true)
+    // 完全体：类型层级（小类型挂 parentKey）+ payment_platform 枚举字段（同源动态 flag）
+    expect(typeList.find((t: any) => t.key === 'food-coffee')).toMatchObject({ parentKey: 'food', icon: 'coffee' })
 
     // 插件来源类型现在可用（本进程冷引导加载）
     const add = await ledger('add', '-d', 'expense', '-a', '88', '-t', 'food', '--json')
     expect(add.code).toBe(0)
     const foodEntry = parseJson(add.stdout)
+
+    const withPlatform = await ledger(
+      'add', '-d', 'expense', '-a', '66', '-t', 'food-coffee', '--payment-platform', 'wechat', '--json',
+    )
+    expect(withPlatform.code).toBe(0)
+    expect(parseJson(withPlatform.stdout).extra).toEqual({ payment_platform: 'wechat' })
 
     const mismatch = await ledger('add', '-d', 'income', '-a', '1', '-t', 'food')
     expect(mismatch.stderr).toContain('TYPE_DIRECTION_MISMATCH')

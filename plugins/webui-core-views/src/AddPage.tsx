@@ -43,6 +43,9 @@ export function AddPage({ client }: Props) {
   }, [])
 
   const visibleFields = fields.filter((f) => !f.unavailable && (f.scope === 'both' || f.scope === direction))
+  // 类型层级：大类型分组（optgroup）、无子类的大类型平铺——注册表驱动同源渲染
+  const activeTypes = types.filter((t) => !t.unavailable && t.direction === direction)
+  const bigTypes = activeTypes.filter((t) => !t.parentKey)
 
   const submit = async () => {
     setMessage(null)
@@ -105,13 +108,25 @@ export function AddPage({ client }: Props) {
         <label style={labelStyle}>类型</label>
         <select style={inputStyle} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">（无类型）</option>
-          {types
-            .filter((t) => !t.unavailable && t.direction === direction)
-            .map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.label}
-              </option>
-            ))}
+          {bigTypes.map((big) => {
+            const children = activeTypes.filter((t) => t.parentKey === big.key)
+            if (children.length === 0) {
+              return (
+                <option key={big.key} value={big.key}>
+                  {big.label}
+                </option>
+              )
+            }
+            return (
+              <optgroup key={big.key} label={big.label}>
+                {children.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </optgroup>
+            )
+          })}
         </select>
       </div>
 
