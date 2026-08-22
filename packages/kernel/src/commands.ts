@@ -39,7 +39,7 @@ export function registerCoreCommands(deps: {
     return ledger.listRevisions(id)
   })
 
-  for (const kind of ['summary', 'monthly', 'byType', 'byDirection'] as const) {
+  for (const kind of ['summary', 'monthly', 'byType', 'byDirection', 'byRecorder'] as const) {
     dispatcher.register(`stats.${kind}`, (payload) => ledger.stats(kind, entryFilter(payload)))
   }
 

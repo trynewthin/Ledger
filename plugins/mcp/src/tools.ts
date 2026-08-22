@@ -154,10 +154,10 @@ export async function buildTools(kernel: Kernel): Promise<McpTool[]> {
 
   const getStats: McpTool = {
     name: 'get_stats',
-    description: '统计：summary / monthly / byType / byDirection',
+    description: '统计：summary / monthly / byType / byDirection / byRecorder',
     inputSchema: {
       type: 'object',
-      properties: { kind: { type: 'string', enum: ['summary', 'monthly', 'byType', 'byDirection'] } },
+      properties: { kind: { type: 'string', enum: ['summary', 'monthly', 'byType', 'byDirection', 'byRecorder'] } },
       required: ['kind'],
     },
     handler: async (args, k) =>

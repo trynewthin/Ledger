@@ -15,6 +15,7 @@ import type {
   CurrencyTotals,
   EntryDTO,
   StatsByDirectionItem,
+  StatsByRecorderItem,
   StatsByTypeItem,
   StatsKind,
   StatsMonthlyItem,
@@ -145,7 +146,7 @@ export class LedgerService {
     return this.repo.listRevisions(entryId)
   }
 
-  stats(kind: StatsKind, filterInput?: unknown): StatsSummary | StatsMonthlyItem[] | StatsByTypeItem[] | StatsByDirectionItem[] {
+  stats(kind: StatsKind, filterInput?: unknown): StatsSummary | StatsMonthlyItem[] | StatsByTypeItem[] | StatsByDirectionItem[] | StatsByRecorderItem[] {
     const filter = filterInput ? parseOrThrow(listEntriesSchema, filterInput, `stats.${kind}`) : undefined
     const items = this.repo.list({ ...filter, includeVoided: filter?.includeVoided ?? false }).items
     switch (kind) {
@@ -157,6 +158,8 @@ export class LedgerService {
         return byType(items)
       case 'byDirection':
         return byDirection(items)
+      case 'byRecorder':
+        return byRecorder(items)
       default:
         throw new AppError('VALIDATION_ERROR', `unknown stats kind: ${String(kind)}`)
     }
@@ -239,4 +242,17 @@ function byDirection(items: EntryData[]): StatsByDirectionItem[] {
     addTotal(item.totals, e.currency, e.amountMinor)
   }
   return [...map.values()]
+}
+
+function byRecorder(items: EntryData[]): StatsByRecorderItem[] {
+  const map = new Map<string, StatsByRecorderItem>()
+  for (const e of items) {
+    let item = map.get(e.recorder)
+    if (!item) {
+      item = { recorder: e.recorder, totals: emptyTotals() }
+      map.set(e.recorder, item)
+    }
+    addTotal(item.totals, e.currency, e.amountMinor)
+  }
+  return [...map.values()].sort((a, b) => sumTotals(b.totals) - sumTotals(a.totals))
 }

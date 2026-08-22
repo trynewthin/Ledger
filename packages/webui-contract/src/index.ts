@@ -132,3 +132,8 @@ export interface StatsByTypeItem {
   direction: Direction
   totals: CurrencyTotals
 }
+
+export interface StatsByRecorderItem {
+  recorder: string
+  totals: CurrencyTotals
+}

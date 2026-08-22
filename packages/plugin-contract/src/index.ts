@@ -173,13 +173,19 @@ export interface StatsByDirectionItem {
   totals: CurrencyTotals
 }
 
-export type StatsKind = 'summary' | 'monthly' | 'byType' | 'byDirection'
+export interface StatsByRecorderItem {
+  recorder: string
+  totals: CurrencyTotals
+}
+
+export type StatsKind = 'summary' | 'monthly' | 'byType' | 'byDirection' | 'byRecorder'
 
 export interface StatsResults {
   summary: StatsSummary
   monthly: StatsMonthlyItem[]
   byType: StatsByTypeItem[]
   byDirection: StatsByDirectionItem[]
+  byRecorder: StatsByRecorderItem[]
 }
 
 // ---------------------------------------------------------------------------

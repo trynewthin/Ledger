@@ -199,13 +199,13 @@ export function buildProgram(ctx: CliContext): Command {
   // ---- 统计 ----
   program
     .command('stats')
-    .description('统计: summary | monthly | by-type | by-direction')
+    .description('统计: summary | monthly | by-type | by-direction | by-recorder')
     .argument('[kind]', '统计种类', 'summary')
     .option('-d, --direction <dir>', '按方向过滤')
     .option('--from <date>', '起始日')
     .option('--to <date>', '结束日')
     .action(async (kind: string, opts) => {
-      const kinds: Record<string, string> = { summary: 'summary', monthly: 'monthly', 'by-type': 'byType', 'by-direction': 'byDirection' }
+      const kinds: Record<string, string> = { summary: 'summary', monthly: 'monthly', 'by-type': 'byType', 'by-direction': 'byDirection', 'by-recorder': 'byRecorder' }
       const command = kinds[kind]
       if (!command) throw new CliError('VALIDATION_ERROR', `未知统计: ${kind}`)
       const filter: any = {}
@@ -232,6 +232,11 @@ export function buildProgram(ctx: CliContext): Command {
         printTable(['类型', '方向', '金额'], (data as any[]).map((t) => [
           typeLabel(ctx, t.type),
           t.direction === 'income' ? '收入' : '支出',
+          Object.entries<any>(t.totals).map(([c, v]) => `${formatMoney(v.totalMinor, c)} (${v.count})`).join(' ') || '-',
+        ]))
+      } else if (command === 'byRecorder') {
+        printTable(['记录者', '金额'], (data as any[]).map((t) => [
+          t.recorder,
           Object.entries<any>(t.totals).map(([c, v]) => `${formatMoney(v.totalMinor, c)} (${v.count})`).join(' ') || '-',
         ]))
       } else {

@@ -144,7 +144,20 @@ importers:
         specifier: workspace:^
         version: link:../../packages/kernel
 
-  plugins/dataviews: {}
+  plugins/dataviews:
+    devDependencies:
+      '@ledger/webui-contract':
+        specifier: workspace:*
+        version: link:../../packages/webui-contract
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.3(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)
 
   plugins/http:
     dependencies:

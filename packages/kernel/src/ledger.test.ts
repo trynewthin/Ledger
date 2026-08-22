@@ -129,6 +129,19 @@ describe('ledger commands', () => {
     expect(Object.keys(summary.expense).sort()).toEqual(['CNY', 'JPY'])
   })
 
+  it('stats.byRecorder aggregates per recorder identity', async () => {
+    await ok(kernel, 'entry.add', { direction: 'expense', amountMinor: 300, currency: 'CNY' })
+    await ok(kernel, 'entry.add', { direction: 'expense', amountMinor: 200, currency: 'CNY' }, { source: 'cli', recorder: 'bot:mcp' })
+    const byRecorder = await ok(kernel, 'stats.byRecorder', {})
+    expect(byRecorder).toEqual([
+      { recorder: 'me', totals: { CNY: { count: 1, totalMinor: 300 } } },
+      { recorder: 'bot:mcp', totals: { CNY: { count: 1, totalMinor: 200 } } },
+    ])
+    // 过滤维度复用 entry filter
+    const onlyMe = await ok(kernel, 'stats.byRecorder', { recorder: 'me' })
+    expect(onlyMe).toHaveLength(1)
+  })
+
   it('list filters: direction/type/recorder/from/to', async () => {
     await ok(kernel, 'entry.add', { direction: 'expense', amountMinor: 100, currency: 'CNY', occurredAt: 1_000 })
     await ok(kernel, 'entry.add', { direction: 'income', amountMinor: 100, currency: 'CNY', occurredAt: 2_000 })

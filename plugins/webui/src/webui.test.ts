@@ -164,6 +164,32 @@ describe('plugin-webui (L2) — 分形插件架构', () => {
   )
 
   it(
+    'installing dataviews exposes data-view widgets; widget ESM served; stats feed over API',
+    { timeout: 30_000 },
+    async () => {
+      const installed = await installUiPluginDir(join(REPO, 'plugins/dataviews/dist'), home)
+      expect(installed.name).toBe('dataviews')
+
+      const manifest = await get('/api/ui-plugins')
+      expect(manifest.json).toEqual([{ name: 'dataviews', version: '0.1.0', entry: '/plugins/dataviews/index.js' }])
+
+      const esm = await get('/plugins/dataviews/index.js')
+      expect(esm.status).toBe(200)
+      expect(esm.text).toContain('registerWidget')
+      expect(esm.text).toContain('dataviews')
+
+      // 概览页 widget 的数据命令面经 API 网关可用（含新 stats.byRecorder）
+      const monthly = await rpc('stats.monthly', {})
+      expect(monthly.status).toBe(200)
+      expect(monthly.body.ok).toBe(true)
+
+      const byRecorder = await rpc('stats.byRecorder', {})
+      expect(byRecorder.status).toBe(200)
+      expect(byRecorder.body.data.some((r: any) => r.recorder === 'me')).toBe(true)
+    },
+  )
+
+  it(
     'killed webui worker restarts automatically; browser reconnects (health recovers)',
     { timeout: 60_000 },
     async () => {
