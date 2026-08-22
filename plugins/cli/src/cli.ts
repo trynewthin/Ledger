@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url'
 import { CommanderError } from 'commander'
 import type { FieldDefDTO, TypeDefDTO } from '@ledger/plugin-contract'
+import { runHostMain } from '@ledger/host'
 import { buildProgram, type CliContext } from './commands.js'
 import { toCliError } from './errors.js'
 import { resolveLedgerHome } from './paths.js'
@@ -13,6 +14,10 @@ import { withSession } from './session.js'
  */
 export async function runCli(argv: string[]): Promise<number> {
   const home = resolveLedgerHome()
+  // ledger host：常驻宿主前台运行，不经会话（自身就是宿主）
+  if (argv[0] === 'host') {
+    return runHostMain(home)
+  }
   const recorder = process.env['LEDGER_RECORDER'] ?? 'me'
   const json = argv.includes('--json')
   try {

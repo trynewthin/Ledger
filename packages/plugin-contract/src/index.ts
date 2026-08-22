@@ -277,11 +277,35 @@ export interface Logger {
   error(msg: string, ...args: unknown[]): void
 }
 
+// ---------------------------------------------------------------------------
+// 统一调用协议（dispatcher 的请求/响应形态，进程内外一致）
+// ---------------------------------------------------------------------------
+
+export interface RpcRequest {
+  command: string
+  payload?: unknown
+  context?: { source?: string; recorder?: string }
+}
+
+export interface RpcOk {
+  ok: true
+  data: unknown
+}
+
+export interface RpcError {
+  ok: false
+  error: { code: string; message: string; details?: unknown }
+}
+
+export type RpcResult = RpcOk | RpcError
+
 export interface HostAPI {
   registry: RegistryAPI
   events: EventBusAPI
   ledger: LedgerAPI
   services: ServicesAPI
+  /** 统一调用协议入口（入口插件转发外部调用的正道；context 缺省以插件身份注入） */
+  dispatch(req: RpcRequest): Promise<RpcResult>
   log: Logger
   meta: { pluginName: string; dataDir: string }
 }

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { copyFile, readFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { LedgerPlugin } from '@ledger/plugin-contract'
@@ -33,20 +33,33 @@ export async function readPluginDirManifest(dir: string): Promise<PluginDirManif
 
 /**
  * 从目录加载插件（ESM 动态导入）。
- * bust=true 追加 cache-busting 参数——L1 热替换时拿新模块而非模块缓存。
+ *
+ * bust=true（L1 热替换）时将入口拷贝为唯一文件名再导入：
+ * URL query 参数在某些加载环境（vite-node 等）会被归一化缓存，
+ * 唯一文件名在任何模块缓存机制下都保证拿到新代码。
+ * 纪律：L1 插件的 dist 必须是单文件产物（tsup 默认 bundling），
+ * 否则其相对 chunk 会命中旧缓存。
  */
 export async function loadPluginFromDir(dir: string, opts?: { bust?: boolean }): Promise<LedgerPlugin> {
   const fileManifest = await readPluginDirManifest(dir)
-  let entryUrl = pathToFileURL(resolve(dir, fileManifest.main)).href
-  if (opts?.bust) entryUrl += `?t=${Date.now()}`
+  const entryAbs = resolve(dir, fileManifest.main)
+  let entryUrl = pathToFileURL(entryAbs).href
+  let tempCopy: string | undefined
+  if (opts?.bust) {
+    tempCopy = entryAbs.replace(/(\.[cm]?js)?$/, `.hot-${process.pid}-${Date.now()}.mjs`)
+    await copyFile(entryAbs, tempCopy)
+    entryUrl = pathToFileURL(tempCopy).href
+  }
   let mod: Record<string, unknown>
   try {
-    mod = (await import(entryUrl)) as Record<string, unknown>
+    mod = (await import(/* @vite-ignore */ entryUrl)) as Record<string, unknown>
   } catch (e) {
     throw new AppError(
       'PLUGIN_LOAD_FAILED',
       `failed to import ${entryUrl}: ${e instanceof Error ? e.message : String(e)}`,
     )
+  } finally {
+    if (tempCopy) await rm(tempCopy, { force: true })
   }
   const isPluginLike = (v: unknown): v is LedgerPlugin =>
     !!v && typeof v === 'object' && 'manifest' in v && typeof (v as LedgerPlugin).activate === 'function'

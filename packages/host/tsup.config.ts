@@ -1,12 +1,11 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: { cli: 'src/cli.ts', index: 'src/index.ts' },
+  entry: { index: 'src/index.ts', main: 'src/main.ts', worker: 'src/worker.ts' },
   format: ['esm'],
   dts: { entry: ['src/index.ts'] },
   clean: true,
   banner: { js: '#!/usr/bin/env node' },
   target: 'node22',
-  // 关闭代码分割：chunk 会让 import.meta.url ≠ 入口路径，破坏直跑引导
   splitting: false,
 })

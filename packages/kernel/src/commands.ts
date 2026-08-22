@@ -1,4 +1,4 @@
-import type { Direction, FieldEnumValue, StatsKind } from '@ledger/plugin-contract'
+import type { Direction, FieldEnumValue, HostControlAPI, PluginAdminAPI } from '@ledger/plugin-contract'
 import { Dispatcher } from './dispatcher.js'
 import { AppError } from './errors.js'
 import { LedgerService } from './ledger.js'
@@ -9,14 +9,17 @@ import { listEntriesSchema, parseOrThrow } from './validation.js'
 /**
  * 命令注册表：entry.* / stats.* / type.* / field.* / plugin.*（admin）。
  * 业务命令与 admin 命令同一通道（统一调用协议）。
+ * admin 注入时（常驻宿主），plugin.* 全集 + host.* 生效；否则仅冷引导子集。
  */
 export function registerCoreCommands(deps: {
   dispatcher: Dispatcher
   ledger: LedgerService
   registry: Registry
   pluginHost: PluginHost
+  admin?: PluginAdminAPI
+  hostControl?: HostControlAPI
 }): void {
-  const { dispatcher, ledger, registry, pluginHost } = deps
+  const { dispatcher, ledger, registry, pluginHost, admin, hostControl } = deps
 
   const entryFilter = (payload: any) => (payload ? parseOrThrow(listEntriesSchema, payload, 'filter') : undefined)
 
@@ -71,13 +74,51 @@ export function registerCoreCommands(deps: {
     return def
   })
 
-  // ---- 插件管理（admin 命令，白名单插件经 AdminHostAPI 调用；管理入口不唯一） ----
-  dispatcher.register('plugin.list', () => pluginHost.list())
-  dispatcher.register('plugin.unload', async (payload) => {
-    const name = requireString(payload?.name, 'name')
-    await pluginHost.unload(name, 'shutdown')
-    return { unloaded: name }
-  })
+  // ---- 插件管理（admin 命令；管理入口不唯一：任何白名单特权插件共用） ----
+  dispatcher.register('plugin.list', () => (admin ? admin.list() : pluginHost.list()))
+  if (admin) {
+    dispatcher.register('plugin.load', async (payload) => {
+      const name = requireString(payload?.name ?? payload?.target, 'name')
+      return admin.load(name)
+    })
+    dispatcher.register('plugin.unload', async (payload) => {
+      const name = requireString(payload?.name, 'name')
+      await admin.unload(name)
+      return { unloaded: name }
+    })
+    dispatcher.register('plugin.reload', async (payload) => {
+      const name = requireString(payload?.name, 'name')
+      return admin.reload(name)
+    })
+    dispatcher.register('plugin.install', async (payload) => {
+      const dir = requireString(payload?.dir ?? payload?.sourceDir, 'dir')
+      return admin.install(dir, payload?.opts)
+    })
+    dispatcher.register('plugin.uninstall', async (payload) => {
+      const name = requireString(payload?.name, 'name')
+      await admin.uninstall(name)
+      return { uninstalled: name }
+    })
+    dispatcher.register('plugin.update', async (payload) => {
+      const name = requireString(payload?.name, 'name')
+      const dir = requireString(payload?.dir ?? payload?.sourceDir, 'dir')
+      return admin.update(name, dir)
+    })
+  } else {
+    dispatcher.register('plugin.unload', async (payload) => {
+      const name = requireString(payload?.name, 'name')
+      await pluginHost.unload(name, 'shutdown')
+      return { unloaded: name }
+    })
+  }
+  if (hostControl) {
+    dispatcher.register('host.info', () => hostControl.info())
+    dispatcher.register('host.shutdown', async () => {
+      const info = await hostControl.info()
+      setTimeout(() => void hostControl.shutdown(), 10)
+      return { shuttingDown: true, pid: info.pid }
+    })
+  }
   dispatcher.register('commands.list', () => dispatcher.listCommands())
 }
 

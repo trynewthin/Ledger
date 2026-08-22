@@ -4,11 +4,14 @@ import type {
   HostAPI,
   HostControlAPI,
   PluginAdminAPI,
+  RpcRequest,
+  RpcResult,
 } from '@ledger/plugin-contract'
 import { EventBus } from './event-bus.js'
 import { LedgerService } from './ledger.js'
 import { Registry } from './registry.js'
 import { ServiceRegistry } from './services.js'
+import { Dispatcher } from './dispatcher.js'
 import type { Logger } from '@ledger/plugin-contract'
 
 export interface HostApiDeps {
@@ -16,6 +19,7 @@ export interface HostApiDeps {
   events: EventBus
   ledger: LedgerService
   services: ServiceRegistry
+  dispatcher: Dispatcher
   log: Logger
   pluginsAdmin?: PluginAdminAPI
   hostControl?: HostControlAPI
@@ -75,6 +79,15 @@ export function createPluginHostApi(deps: HostApiDeps, ctx: HostApiContext, isAd
       get: (name) => services.get(name),
       onAvailable: (name, cb) => services.onAvailable(name, cb, ctx.pluginName),
     },
+    dispatch: async (req: RpcRequest): Promise<RpcResult> =>
+      deps.dispatcher.dispatch({
+        command: req.command,
+        payload: req.payload,
+        context: {
+          source: req.context?.source ?? `plugin:${ctx.pluginName}`,
+          recorder: req.context?.recorder ?? 'me',
+        },
+      }),
     log,
     meta: { pluginName: ctx.pluginName, dataDir: ctx.dataDir },
   }

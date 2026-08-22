@@ -12,6 +12,7 @@ import { createPluginHostApi } from './host-api.js'
 import type { HostApiDeps } from './host-api.js'
 import { noopLogger } from './logger.js'
 import type { Logger } from '@ledger/plugin-contract'
+import { loadPluginFromDir } from './loader.js'
 import { Registry } from './registry.js'
 import { ServiceRegistry } from './services.js'
 
@@ -76,6 +77,55 @@ export class PluginHost {
     } catch (e) {
       this.records.delete(name)
       throw e
+    }
+  }
+
+  /** 从目录加载（记录 modulePath 供热替换） */
+  async loadFile(dir: string): Promise<LedgerPlugin> {
+    const plugin = await loadPluginFromDir(dir)
+    await this.load(plugin)
+    const rec = this.records.get(plugin.manifest.name)
+    if (rec) rec.modulePath = dir
+    return plugin
+  }
+
+  /**
+   * L1 热替换：注销注册项 → 清模块缓存（cache-busting 重导入）→ 重载 → 重注册。
+   * 失败自动回滚旧版本（旧对象仍存活，仅被 deactivate）。纪律：插件必须无状态。
+   */
+  async reload(name: string): Promise<LedgerPlugin> {
+    const rec = this.records.get(name)
+    if (!rec) throw new AppError('PLUGIN_NOT_FOUND', `plugin not loaded: ${name}`)
+    if (!rec.modulePath) {
+      throw new AppError('NOT_SUPPORTED', `plugin ${name} was loaded as an instance; file-based reload requires a module path`)
+    }
+    const old = rec.plugin
+    const { modulePath } = rec
+    await this.deactivateRecord(rec, name, 'reload')
+    try {
+      const fresh = await loadPluginFromDir(modulePath, { bust: true })
+      if (fresh.manifest.name !== name) {
+        throw new AppError('PLUGIN_LOAD_FAILED', `reloaded plugin declares name ${fresh.manifest.name}, expected ${name}`)
+      }
+      this.records.set(name, { plugin: fresh, state: 'inactive', modulePath })
+      await this.activate(fresh)
+      return fresh
+    } catch (e) {
+      // 回滚：旧实例重新激活（其注册项随 activate 恢复）
+      this.records.set(name, { plugin: old, state: 'inactive', modulePath })
+      try {
+        await this.activate(old)
+      } catch (rollbackErr) {
+        this.records.delete(name)
+        throw new AppError(
+          'PLUGIN_LOAD_FAILED',
+          `reload of ${name} failed (${errText(e)}) and rollback also failed: ${errText(rollbackErr)}; plugin left unloaded`,
+        )
+      }
+      throw new AppError(
+        'PLUGIN_LOAD_FAILED',
+        `reload of ${name} failed (${errText(e)}); rolled back to previous version ${old.manifest.version}`,
+      )
     }
   }
 
@@ -146,6 +196,10 @@ export class PluginHost {
   records_(): Map<string, PluginRecord> {
     return this.records
   }
+}
+
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
 }
 
 /** 拓扑排序：provides X 的先于 consumes X；环或缺失提供者不阻塞（可选依赖） */

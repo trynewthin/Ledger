@@ -76,8 +76,14 @@ export async function installPluginDir(sourceDir: string, home: string): Promise
     recursive: true,
     filter: (src) => {
       const rel = src.slice(sourceDir.length)
-      // 只携带运行所需：plugin.json、main 所在目录（dist）、静态资产
-      return rel === '' || rel === '/plugin.json' || rel.startsWith('/dist') || rel.startsWith('/assets')
+      // 只携带运行所需：目录、plugin.json、main 所在目录（dist）、静态资产、根级入口脚本
+      return (
+        rel === '' ||
+        rel === '/plugin.json' ||
+        rel.startsWith('/dist') ||
+        rel.startsWith('/assets') ||
+        /^\/[^/]+\.(mjs|cjs|js|json|css|html)$/.test(rel)
+      )
     },
   })
   const config = await readPluginsConfig(home)
@@ -119,9 +125,11 @@ async function dirExists(p: string): Promise<boolean> {
 export async function bootstrapInstalledPlugins(
   kernel: Kernel,
   home: string,
-): Promise<{ loaded: string[]; skippedWorker: string[]; skippedDisabled: string[]; failed: { name: string; error: string }[] }> {
+  opts?: { onWorker?: (name: string, dir: string) => Promise<void> },
+): Promise<{ loaded: string[]; workers: string[]; skippedWorker: string[]; skippedDisabled: string[]; failed: { name: string; error: string }[] }> {
   const installed = await listInstalledPlugins(home)
   const loaded: string[] = []
+  const workers: string[] = []
   const skippedWorker: string[] = []
   const skippedDisabled: string[] = []
   const failed: { name: string; error: string }[] = []
@@ -133,10 +141,18 @@ export async function bootstrapInstalledPlugins(
     try {
       const plugin = await loadPluginFromDir(p.dir)
       if (plugin.manifest.isolation === 'worker') {
-        skippedWorker.push(p.name)
+        if (opts?.onWorker) {
+          await opts.onWorker(plugin.manifest.name, p.dir)
+          workers.push(plugin.manifest.name)
+        } else {
+          skippedWorker.push(p.name)
+        }
         continue
       }
       await kernel.pluginHost.load(plugin)
+      // 记录 modulePath，供 L1 热替换
+      const rec = kernel.pluginHost.records_().get(plugin.manifest.name)
+      if (rec) (rec as { modulePath?: string }).modulePath = p.dir
       loaded.push(p.name)
     } catch (e) {
       // 坏插件不拖垮宿主：记录后继续
@@ -144,5 +160,5 @@ export async function bootstrapInstalledPlugins(
       kernel.pluginHost.deps.log.warn(`failed to load plugin ${p.name}: ${failed.at(-1)?.error}`)
     }
   }
-  return { loaded, skippedWorker, skippedDisabled, failed }
+  return { loaded, workers, skippedWorker, skippedDisabled, failed }
 }

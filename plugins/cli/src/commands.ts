@@ -344,6 +344,26 @@ export function buildProgram(ctx: CliContext): Command {
     })
 
   pluginCmd
+    .command('load <name>')
+    .description('加载已安装插件（需宿主运行）')
+    .action(async (name: string) => {
+      requireRpc(ctx, 'plugin load')
+      const info = unwrap(await call('plugin.load', { name }))
+      if (ctx.json) console.log(JSON.stringify(info, null, 2))
+      else console.log(`✓ 已加载 ${info.name} (${info.state})`)
+    })
+
+  pluginCmd
+    .command('reload <name>')
+    .description('热替换插件（L1 失败自动回滚 / L2 worker 重引导）')
+    .action(async (name: string) => {
+      requireRpc(ctx, 'plugin reload')
+      const info = unwrap(await call('plugin.reload', { name }))
+      if (ctx.json) console.log(JSON.stringify(info, null, 2))
+      else console.log(`✓ 已重载 ${info.name} → v${info.version}`)
+    })
+
+  pluginCmd
     .command('uninstall <name>')
     .description('卸载插件')
     .action(async (name: string) => {
@@ -353,5 +373,19 @@ export function buildProgram(ctx: CliContext): Command {
       else console.log(`✓ 已卸载 ${name}`)
     })
 
+  program
+    .command('host')
+    .description('启动常驻宿主（前台运行；CLI 将自动走 RPC 路径）')
+    .action(() => {
+      // 实际启动在 runCli 中拦截（不经会话）
+    })
+
   return program
+}
+
+/** 冷引导一次性进程里 load/reload 无意义——提示需宿主运行（AdminHostAPI 语义差异） */
+function requireRpc(ctx: CliContext, op: string): void {
+  if (ctx.session.mode !== 'rpc') {
+    throw new CliError('NOT_SUPPORTED', `${op} 需常驻宿主运行：先启动 ledger host`)
+  }
 }

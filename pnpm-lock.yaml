@@ -23,7 +23,20 @@ importers:
 
   packages/domain: {}
 
-  packages/host: {}
+  packages/host:
+    dependencies:
+      '@ledger/domain':
+        specifier: workspace:^
+        version: link:../domain
+      '@ledger/kernel':
+        specifier: workspace:^
+        version: link:../kernel
+      '@ledger/plugin-contract':
+        specifier: workspace:^
+        version: link:../plugin-contract
+      '@ledger/storage-sqlite':
+        specifier: workspace:^
+        version: link:../storage-sqlite
 
   packages/http-rpc: {}
 
@@ -59,6 +72,9 @@ importers:
       '@ledger/domain':
         specifier: workspace:^
         version: link:../../packages/domain
+      '@ledger/host':
+        specifier: workspace:^
+        version: link:../../packages/host
       '@ledger/kernel':
         specifier: workspace:^
         version: link:../../packages/kernel
@@ -87,7 +103,11 @@ importers:
 
   plugins/dataviews: {}
 
-  plugins/http: {}
+  plugins/http:
+    dependencies:
+      '@ledger/plugin-contract':
+        specifier: workspace:^
+        version: link:../../packages/plugin-contract
 
   plugins/mcp: {}
 

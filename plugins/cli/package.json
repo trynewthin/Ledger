@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@ledger/domain": "workspace:^",
+    "@ledger/host": "workspace:^",
     "@ledger/kernel": "workspace:^",
     "@ledger/plugin-contract": "workspace:^",
     "@ledger/storage-sqlite": "workspace:^",

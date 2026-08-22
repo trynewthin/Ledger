@@ -13,14 +13,20 @@ export interface RpcClient {
 export async function tryRpcConnect(sockPath: string, timeoutMs = 400): Promise<RpcClient | null> {
   return new Promise((resolvePromise) => {
     const socket = connect(sockPath)
-    const done = (client: RpcClient | null) => {
-      socket.removeAllListeners()
+    const settle = (client: RpcClient | null) => {
+      socket.removeListener('error', onFail)
+      socket.removeListener('timeout', onFail)
       if (!client) socket.destroy()
       resolvePromise(client)
     }
+    const onFail = () => settle(null)
     socket.setTimeout(timeoutMs)
+    socket.once('error', onFail)
+    socket.once('timeout', onFail)
     socket.once('connect', () => {
       socket.setTimeout(0)
+      socket.removeListener('error', onFail)
+      socket.removeListener('timeout', onFail)
       let buffer = ''
       const pending = new Map<number, (r: DispatchResult) => void>()
       let nextId = 1
@@ -43,7 +49,11 @@ export async function tryRpcConnect(sockPath: string, timeoutMs = 400): Promise<
         for (const r of pending.values()) r({ ok: false, error: { code: 'INTERNAL', message: 'host connection lost' } })
         pending.clear()
       })
-      done({
+      socket.on('close', () => {
+        for (const r of pending.values()) r({ ok: false, error: { code: 'INTERNAL', message: 'host connection closed' } })
+        pending.clear()
+      })
+      settle({
         call: (req) =>
           new Promise((res) => {
             const id = nextId++
@@ -53,7 +63,5 @@ export async function tryRpcConnect(sockPath: string, timeoutMs = 400): Promise<
         close: () => socket.end(),
       })
     })
-    socket.once('error', () => done(null))
-    socket.once('timeout', () => done(null))
   })
 }

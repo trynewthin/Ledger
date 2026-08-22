@@ -44,7 +44,7 @@ export function createKernel(opts: KernelOptions): Kernel {
   const ledger = new LedgerService(opts.repo, registry, events, log)
   const dispatcher = new Dispatcher(log)
   const pluginHost = new PluginHost(
-    { registry, events, ledger, services, log },
+    { registry, events, ledger, services, dispatcher, log },
     {
       coreMaintainedPlugins: config.coreMaintainedPlugins ?? DEFAULT_CORE_MAINTAINED,
       dataDir: config.dataDir ?? '.',
@@ -52,7 +52,7 @@ export function createKernel(opts: KernelOptions): Kernel {
       hostControl: config.hostControl,
     },
   )
-  registerCoreCommands({ dispatcher, ledger, registry, pluginHost })
+  registerCoreCommands({ dispatcher, ledger, registry, pluginHost, admin: config.pluginsAdmin, hostControl: config.hostControl })
   return {
     events,
     registry,
