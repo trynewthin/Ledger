@@ -55,7 +55,8 @@ export class Registry {
   registerType(input: TypeRegistrationInput, from: RegistrationOrigin): TypeDefRecord {
     validateKey(input.key)
     const existing = this.types.get(input.key)
-    if (existing && !(input.overwrite && existing.owner === from.owner)) {
+    // 同 owner 重复注册 = 幂等刷新（插件跨进程反复激活）；不同 owner 才冲突
+    if (existing && existing.owner !== from.owner && !input.overwrite) {
       throw new AppError('TYPE_KEY_TAKEN', `type "${input.key}" already registered by ${existing.owner}`)
     }
     if (input.parentKey != null && input.parentKey === input.key) {
@@ -82,7 +83,7 @@ export class Registry {
   registerField(input: FieldRegistrationInput, from: RegistrationOrigin): FieldDefRecord {
     validateKey(input.key)
     const existing = this.fields.get(input.key)
-    if (existing && !(input.overwrite && existing.owner === from.owner)) {
+    if (existing && existing.owner !== from.owner && !input.overwrite) {
       throw new AppError('FIELD_KEY_TAKEN', `field "${input.key}" already registered by ${existing.owner}`)
     }
     if (input.valueType === 'enum') {

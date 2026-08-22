@@ -39,9 +39,19 @@ describe('ledger commands', () => {
     const e = await err(kernel, 'entry.add', { direction: 'expense', amountMinor: 100, currency: 'CNY', type: 'salary' })
     expect(e.code).toBe('TYPE_DIRECTION_MISMATCH')
 
-    // 同 key 重复注册被拒，overwrite 可覆盖自己的
-    expect((await err(kernel, 'type.register', { key: 'salary', label: '工资', direction: 'income' })).code).toBe('TYPE_KEY_TAKEN')
-    await ok(kernel, 'type.register', { key: 'salary', label: '工资', direction: 'income', overwrite: true })
+    // 同 owner 重复注册 = 幂等刷新（插件跨进程反复激活）；不同 owner 才冲突
+    const refreshed = await ok(kernel, 'type.register', { key: 'salary', label: '工资', direction: 'income' })
+    expect(refreshed.key).toBe('salary')
+    let thrown: unknown
+    try {
+      kernel.pluginHost.deps.registry.registerType(
+        { key: 'salary', label: '工资', direction: 'income' },
+        { origin: 'plugin', owner: 'plugin-other' },
+      )
+    } catch (e) {
+      thrown = e
+    }
+    expect((thrown as { code?: string })?.code).toBe('TYPE_KEY_TAKEN')
   })
 
   it('field validation: enum / type / scope / strict mode', async () => {

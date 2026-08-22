@@ -54,7 +54,23 @@ importers:
         specifier: ^9.6.0
         version: 9.6.0
 
-  plugins/cli: {}
+  plugins/cli:
+    dependencies:
+      '@ledger/domain':
+        specifier: workspace:^
+        version: link:../../packages/domain
+      '@ledger/kernel':
+        specifier: workspace:^
+        version: link:../../packages/kernel
+      '@ledger/plugin-contract':
+        specifier: workspace:^
+        version: link:../../packages/plugin-contract
+      '@ledger/storage-sqlite':
+        specifier: workspace:^
+        version: link:../../packages/storage-sqlite
+      commander:
+        specifier: ^13
+        version: 13.1.0
 
   plugins/core-types:
     dependencies:
@@ -635,6 +651,10 @@ packages:
 
   chownr@1.1.4:
     resolution: {integrity: sha512-jJ0bqzaylmJtVnNgzTeSOs8DPavpbYgEr/b0YL8/2GO3xJEhInFmhKMUnEJQjZumK7KXGFhUy89PrsJWlakBVg==}
+
+  commander@13.1.0:
+    resolution: {integrity: sha512-/rFeCpNJQbhSZjGVwO9RFV3xPqbnERS8MmIQzCtD/zl6gpJuV/bMLuN92oG3F7d8oDEHHRrujSXNUr8fpjntKw==}
+    engines: {node: '>=18'}
 
   commander@4.1.1:
     resolution: {integrity: sha512-NOKm8xhkzAjzFx8B2v5OAHT+u5pRQc2UCa2Vq9jYL/31o2wi9mxBA7LIFs3sV5VSC49z6pEhfbMULvShKj26WA==}
@@ -1437,6 +1457,8 @@ snapshots:
       readdirp: 4.1.2
 
   chownr@1.1.4: {}
+
+  commander@13.1.0: {}
 
   commander@4.1.1: {}
 
