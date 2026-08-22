@@ -6,10 +6,24 @@
 
 - [docs/PRD.md](./docs/PRD.md) — 产品需求：定位、场景、功能范围、里程碑
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 技术架构：包结构、插件契约、数据模型、全部决策记录
+- [docs/PROGRESS.md](./docs/PROGRESS.md) — 实施进度与恢复指南：里程碑状态、踩坑记录、待办
 
 ## 状态
 
-方案 v1.0 已定稿（2026-08-22），未开工。实施从 M0（仓库骨架）开始，里程碑定义见 PRD 第 7 节。
+实施中（2026-08-23）：**M0–M5 已完成并验收提交**（骨架 / 内核 / CLI / 宿主与热更新 / WebUI / MCP），69 个测试全绿。剩 M6（plugin-user → core-types 完全体 → dataviews → snapshot），详见 [PROGRESS.md](./docs/PROGRESS.md)。
+
+## 快速上手
+
+```bash
+pnpm install && pnpm build
+
+# CLI 冷引导记账
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js add -d expense -a 12.50
+
+# 常驻宿主 + WebUI（先安装 webui 与 core-types 插件）
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js host
+# 另一终端安装插件后访问 http://127.0.0.1:7420
+```
 
 ## 核心理念
 
