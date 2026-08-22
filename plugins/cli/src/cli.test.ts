@@ -184,6 +184,34 @@ describe('ledger CLI e2e（冷引导路径）', () => {
     expect(parseJson(add.stdout).recorder).toBe('me')
   })
 
+  it('plugin-snapshot: install → 全库快照 → 记账 → restore 回到快照点 → 卸载降级', async () => {
+    const install = await ledger('plugin', 'install', join(REPO, 'plugins/snapshot'))
+    expect(install.code).toBe(0)
+
+    const before = parseJson((await ledger('list', '--all', '--json')).stdout).total
+    const created = await ledger('snapshot', 'create', '--json')
+    expect(created.code).toBe(0)
+    const snap = parseJson(created.stdout)
+    expect(snap.kind).toBe('full')
+
+    // 快照后记几笔 → 回迁 → 总量回到快照点
+    await ledger('add', '-d', 'expense', '-a', '123.45', '--json')
+    const restored = await ledger('snapshot', 'restore', snap.file, '--json')
+    expect(restored.code).toBe(0)
+    expect(parseJson(restored.stdout).entriesAffected).toBe(before)
+
+    const after = parseJson((await ledger('list', '--all', '--json')).stdout).total
+    expect(after).toBe(before)
+
+    const list = await ledger('snapshot', 'list', '--json')
+    expect(parseJson(list.stdout).length).toBeGreaterThanOrEqual(1)
+
+    await ledger('plugin', 'uninstall', 'plugin-snapshot')
+    const degraded = await ledger('snapshot', 'list')
+    expect(degraded.code).toBe(1)
+    expect(degraded.stderr).toContain('SERVICE_UNAVAILABLE')
+  })
+
   it('monthly stats output', async () => {
     const out = await ledger('stats', 'monthly')
     expect(out.code).toBe(0)

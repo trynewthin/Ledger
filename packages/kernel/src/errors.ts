@@ -22,6 +22,7 @@ export type KernelErrorCode =
   | 'PLUGIN_UNAVAILABLE'
   | 'SERVICE_UNAVAILABLE'
   | 'USER_NOT_FOUND'
+  | 'SNAPSHOT_NOT_FOUND'
   | 'NOT_SUPPORTED'
   | 'FORBIDDEN'
   | 'INTERNAL'

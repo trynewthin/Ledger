@@ -1,6 +1,6 @@
-import type { Direction, FieldEnumValue, HostControlAPI, PluginAdminAPI, UserService } from '@ledger/plugin-contract'
+import type { Direction, FieldEnumValue, HostControlAPI, PluginAdminAPI, SnapshotService, UserService } from '@ledger/plugin-contract'
 import { Dispatcher } from './dispatcher.js'
-import { AppError } from './errors.js'
+import { AppError, type KernelErrorCode } from './errors.js'
 import { LedgerService } from './ledger.js'
 import { PluginHost } from './plugin-host.js'
 import { Registry } from './registry.js'
@@ -87,6 +87,27 @@ export function registerCoreCommands(deps: {
   })
   dispatcher.register('user.list', () => requireUserService(services).listUsers())
 
+  // ---- snapshot.*：薄转发到 'snapshot' 服务（plugin-snapshot 提供） ----
+  dispatcher.register('snapshot.create', (payload) => {
+    const svc = requireSnapshotService(services)
+    const scope = payload?.scope === 'book' ? 'book' : 'full'
+    const bookId = typeof payload?.bookId === 'string' && payload.bookId !== '' ? payload.bookId : 'default'
+    return svc.create(scope, scope === 'book' ? bookId : undefined)
+  })
+  dispatcher.register('snapshot.list', () => requireSnapshotService(services).list())
+  dispatcher.register('snapshot.restore', async (payload) => {
+    const svc = requireSnapshotService(services)
+    const file = requireString(payload?.file ?? payload?.path, 'file')
+    try {
+      const result = await svc.restore(file)
+      // 回迁可能整表替换了 type_defs/field_defs：内核注册表重载（插件/用户定义均持久化于表）
+      registry.load()
+      return result
+    } catch (e) {
+      throw withCode(e, 'SNAPSHOT_NOT_FOUND', `snapshot restore failed`)
+    }
+  })
+
   // ---- 插件管理（admin 命令；管理入口不唯一：任何白名单特权插件共用） ----
   dispatcher.register('plugin.list', () => (admin ? admin.list() : pluginHost.list()))
   if (admin) {
@@ -148,6 +169,23 @@ function requireUserService(services: ServiceRegistry): UserService {
     throw new AppError('SERVICE_UNAVAILABLE', `service "user" is not available (install/enable plugin-user)`)
   }
   return svc
+}
+
+function requireSnapshotService(services: ServiceRegistry): SnapshotService {
+  const svc = services.get<SnapshotService>('snapshot')
+  if (!svc) {
+    throw new AppError('SERVICE_UNAVAILABLE', `service "snapshot" is not available (install/enable plugin-snapshot)`)
+  }
+  return svc
+}
+
+/** 服务层携带 code 的错误 → AppError（保持类型化错误码贯穿）；其余原样抛出 */
+function withCode(e: unknown, code: KernelErrorCode, fallbackMessage: string): unknown {
+  const coded = e as { code?: unknown; message?: unknown }
+  if (e instanceof Error && coded.code === code) {
+    return new AppError(code, typeof coded.message === 'string' ? coded.message : fallbackMessage)
+  }
+  return e
 }
 
 function parseTypeRegistration(payload: any) {

@@ -30,6 +30,7 @@ export function statusForErrorCode(code: string): number {
     case 'FIELD_UNKNOWN':
     case 'PLUGIN_NOT_FOUND':
     case 'USER_NOT_FOUND':
+    case 'SNAPSHOT_NOT_FOUND':
       return 404
     case 'VALIDATION_ERROR':
     case 'INVALID_AMOUNT':

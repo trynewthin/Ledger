@@ -315,6 +315,28 @@ export interface UserService {
   setUserName(id: string, name: string): UserRecord
 }
 
+export interface SnapshotInfo {
+  /** snapshots 目录内文件名 */
+  file: string
+  /** 绝对路径 */
+  path: string
+  kind: 'full' | 'book'
+  bookId?: string
+  createdAt: number
+  sizeBytes: number
+}
+
+/**
+ * 'snapshot' 服务（plugin-snapshot 提供）：快照与回迁，单文件即备份单元。
+ * full = SQLite backup 整库副本；book = 按 book_id 的 JSON 导出（entries + revisions + 相关 type/field 定义）。
+ * 服务抛出的错误可携带 code（如 SNAPSHOT_NOT_FOUND），由 kernel 命令层翻译进错误模型。
+ */
+export interface SnapshotService {
+  create(scope: 'full' | 'book', bookId?: string): Promise<SnapshotInfo>
+  list(): SnapshotInfo[]
+  restore(file: string): Promise<{ restored: SnapshotInfo; entriesAffected: number }>
+}
+
 export interface Logger {
   debug(msg: string, ...args: unknown[]): void
   info(msg: string, ...args: unknown[]): void

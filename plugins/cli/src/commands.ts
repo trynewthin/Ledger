@@ -341,6 +341,38 @@ export function buildProgram(ctx: CliContext): Command {
       console.log(`${user.name} (${user.id}) · ${user.kind === 'bot' ? '机器人' : '人'}${user.isDefault ? ' · 默认' : ''}`)
     })
 
+  // ---- 快照与回迁（plugin-snapshot 提供 'snapshot' 服务；单文件即备份单元） ----
+  const snapCmd = program.command('snapshot').description('快照与回迁（plugin-snapshot）')
+  snapCmd
+    .command('create')
+    .description('创建快照（默认全库 .db；--book <id> 为账本级 JSON）')
+    .option('-b, --book <id>', '账本级快照的 bookId（指定即切换为账本级粒度）')
+    .action(async (opts) => {
+      const payload = opts.book ? { scope: 'book' as const, bookId: opts.book } : {}
+      const info = unwrap(await call('snapshot.create', payload))
+      if (ctx.json) console.log(JSON.stringify(info, null, 2))
+      else console.log(`✓ 快照已创建 → ${info.path}`)
+    })
+  snapCmd
+    .command('list')
+    .description('列出快照')
+    .action(async () => {
+      const list = unwrap(await call('snapshot.list'))
+      if (ctx.json) return console.log(JSON.stringify(list, null, 2))
+      printTable(
+        ['文件', '粒度', '账本', '大小', '创建时间'],
+        list.map((s: any) => [s.file, s.kind, s.bookId ?? '-', `${Math.ceil(s.sizeBytes / 1024)}KB`, formatTs(s.createdAt)]),
+      )
+    })
+  snapCmd
+    .command('restore <file>')
+    .description('回迁到快照（全库整表替换 / 账本级按原 id upsert）')
+    .action(async (file: string) => {
+      const res = unwrap(await call('snapshot.restore', { file }))
+      if (ctx.json) return console.log(JSON.stringify(res, null, 2))
+      console.log(`✓ 已回迁 ${res.restored.file}（影响 ${res.entriesAffected} 条）`)
+    })
+
   // ---- 插件管理（AdminHostAPI 语义；冷引导下 install/uninstall 为文件操作） ----
   const pluginCmd = program.command('plugin').description('插件管理（admin）')
   pluginCmd
