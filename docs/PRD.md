@@ -132,12 +132,14 @@ WebUI 是面向用户的必要插件，同时自身内部复刻同一套插件�
 
 | 里程碑 | 内容 | 验收标志 |
 |---|---|---|
-| M0 | 仓库骨架 + 工具链（pnpm monorepo / TS project references / vitest / tsup） | 空包可构建可测试 |
-| M1 | domain + storage-sqlite + kernel（注册表/事件/宿主，暂无热更新）+ plugin-core-types | **零插件自洽测试**：不装任何插件，直接记账 + 统计通过（此后作为永久 CI 门禁）；装上 core-types 后 type 生效；修订/作废/统计全通 |
-| M2 | plugin-cli（双路径、动态 flag、admin 能力） | 日常记账完全可用：add / list / revise / void / stats / 字段注册 |
-| M3 | host 常驻宿主 + L1 热替换（失败回滚）+ L2 supervisor + plugin-http | L1 重载失败自动回滚旧版；杀掉 HTTP worker 宿主存活并自动拉起 |
-| M4 | plugin-webui（前端 shell + UI 插件宿主 + webui-core-views） | 空 shell 零 UI 插件可运行；装 core-views 后记账/流水/详情可用；动态字段注册后表单自动出现新控件；UI 插件启停即时生效 |
-| M5 | plugin-mcp + 收尾 | MCP 客户端可记账查询；错误模型全入口贯穿；迁移演练（模拟 V1→V2）；备份命令 |
-| M6 | 核心功能插件第二梯队：plugin-user → plugin-core-types 完全体 → plugin-dataviews → plugin-snapshot | webui 显示访问者身份、后续插件可获 userId；类型层级与图标在表单/统计生效；多维数据视图可用；快照按粒度创建与回迁成功 |
+| M0 ✅ | 仓库骨架 + 工具链（pnpm monorepo / TS project references / vitest / tsup） | 空包可构建可测试 |
+| M1 ✅ | domain + storage-sqlite + kernel（注册表/事件/宿主，暂无热更新）+ plugin-core-types | **零插件自洽测试**：不装任何插件，直接记账 + 统计通过（此后作为永久 CI 门禁）；装上 core-types 后 type 生效；修订/作废/统计全通 |
+| M2 ✅ | plugin-cli（双路径、动态 flag、admin 能力） | 日常记账完全可用：add / list / revise / void / stats / 字段注册 |
+| M3 ✅ | host 常驻宿主 + L1 热替换（失败回滚）+ L2 supervisor + plugin-http | L1 重载失败自动回滚旧版；杀掉 HTTP worker 宿主存活并自动拉起 |
+| M4 ✅ | plugin-webui（前端 shell + UI 插件宿主 + webui-core-views） | 空 shell 零 UI 插件可运行；装 core-views 后记账/流水/详情可用；动态字段注册后表单自动出现新控件；UI 插件启停即时生效 |
+| M5 ✅ | plugin-mcp + 收尾 | MCP 客户端可记账查询；错误模型全入口贯穿；迁移演练（模拟 V1→V2）；备份命令 |
+| M6 ✅ | 核心功能插件第二梯队：plugin-user → plugin-core-types 完全体 → plugin-dataviews → plugin-snapshot | webui 显示访问者身份、后续插件可获 userId；类型层级与图标在表单/统计生效；多维数据视图可用；快照按粒度创建与回迁成功 |
+
+> 全部里程碑已于 2026-08-23 完成并验收（84 个测试全绿）。
 
 每个里程碑独立可交付：M2 起即可日常使用（CLI），M4 起获得完整图形界面。

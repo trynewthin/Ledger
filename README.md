@@ -10,19 +10,30 @@
 
 ## 状态
 
-实施中（2026-08-23）：**M0–M5 已完成并验收提交**（骨架 / 内核 / CLI / 宿主与热更新 / WebUI / MCP），69 个测试全绿。剩 M6（plugin-user → core-types 完全体 → dataviews → snapshot），详见 [PROGRESS.md](./docs/PROGRESS.md)。
+**实施完成（2026-08-23）**：M0–M6 全部里程碑完成并验收提交，84 个测试全绿、typecheck 全绿。M6 交付 plugin-user（身份目录 + 'db'/'user' 服务契约）、core-types 完全体（类型层级 + 图标 + 付款平台字段）、plugin-dataviews（概览页数据视图 UI 插件 + stats.byRecorder）、plugin-snapshot（全库/账本级快照与回迁）。详见 [PROGRESS.md](./docs/PROGRESS.md)。
 
 ## 快速上手
 
 ```bash
 pnpm install && pnpm build
 
-# CLI 冷引导记账
+# CLI 冷引导记账（类型/字段/身份/快照均为插件，按需安装）
 LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js add -d expense -a 12.50
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js plugin install plugins/core-types
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js add -d expense -a 12.50 -t food-coffee --payment-platform alipay
 
-# 常驻宿主 + WebUI（先安装 webui 与 core-types 插件）
+# 身份与快照（plugin-user / plugin-snapshot）
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js plugin install plugins/user
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js user get
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js plugin install plugins/snapshot
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js snapshot create
+
+# 常驻宿主 + WebUI（安装 webui、core-views、dataviews 后访问 http://127.0.0.1:7420）
 LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js host
-# 另一终端安装插件后访问 http://127.0.0.1:7420
+# 另一终端：
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js plugin install plugins/webui
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js ui install plugins/webui-core-views/dist
+LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js ui install plugins/dataviews/dist
 ```
 
 ## 核心理念

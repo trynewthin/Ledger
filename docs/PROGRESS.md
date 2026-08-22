@@ -6,6 +6,8 @@
 
 ## 1. 当前状态（2026-08-23）
 
+**实施完成。** M0–M6 全部里程碑完成、验收并提交。
+
 | 里程碑 | 内容 | 状态 | 提交 |
 |---|---|---|---|
 | M0 | 仓库骨架 + 工具链 | ✅ 验收通过 | `02ce686` |
@@ -14,11 +16,13 @@
 | M3 | host + L1 热替换回滚 + L2 supervisor + plugin-http | ✅ 验收通过 | `356af45` |
 | M4 | plugin-webui（shell + UI 插件宿主 + core-views + http-rpc 抽出） | ✅ 验收通过 | `2505a7c` |
 | M5 | plugin-mcp + 错误模型贯穿 + 迁移演练 + backup | ✅ 验收通过 | `6ab3fed` |
-| **M6** | **plugin-user → core-types 完全体 → dataviews → snapshot** | ⏳ **未开始（下一步）** | — |
+| M6(1/4) | plugin-user + 'db'/'user' 服务契约 + user.* 薄转发 | ✅ 验收通过 | git log `M6(1/4)` |
+| M6(2/4) | plugin-core-types 完全体（层级 + 图标 + payment_platform） | ✅ 验收通过 | git log `M6(2/4)` |
+| M6(3/4) | plugin-dataviews（UI 插件）+ stats.byRecorder | ✅ 验收通过 | git log `M6(3/4)` |
+| M6(4/4) | plugin-snapshot（全库/账本级快照 + 回迁） | ✅ 验收通过 | git log `M6(4/4)` |
 
-- 测试基线：**69 个测试全绿**，typecheck 全绿
+- 测试基线：**84 个测试全绿**，typecheck 全绿
 - 每个里程碑的流程 = 实现 → `pnpm build && pnpm -r --no-bail test && pnpm typecheck` 全绿 → git 提交（规范见 git log）
-- 工作树干净，HEAD 在 M5
 
 ## 2. 验证命令
 
@@ -30,40 +34,50 @@ pnpm typecheck    # 全部类型检查
 
 注意事项：
 
-- `packages/host`、`plugins/webui`、`plugins/mcp` 的测试较慢（真实进程/worker/socket），单包跑：`cd <pkg> && npx vitest run`
+- `packages/host`、`plugins/webui`、`plugins/cli` 的测试较慢（真实进程/worker/socket），单包跑：`cd <pkg> && npx vitest run`
 - 运行单个 CLI：`LEDGER_HOME=/tmp/x node plugins/cli/dist/cli.js add -d expense -a 12.50`
 - 宿主前台运行：`LEDGER_HOME=/tmp/x node plugins/cli/dist/cli.js host`（CLI 自动切 RPC 路径）
 - WebUI：安装并加载 plugin-webui 后 `http://127.0.0.1:7420`（环境变量 `LEDGER_WEBUI_PORT`；plugin-http 默认 7400，`LEDGER_HTTP_PORT`）
 - MCP：`node plugins/mcp/dist/main.js`（stdio JSON-RPC，LEDGER_HOME 定位数据）
+- 快照/身份：`ledger snapshot create/list/restore`、`ledger user get/list`（先 `plugin install plugins/snapshot` / `plugins/user`）
 
 ## 3. 已实现结构速览
 
 ```
 packages/
-  plugin-contract/   插件 ABI（HostAPI/AdminHostAPI/RPC 形态/DTO/manifest/definePlugin）
+  plugin-contract/   插件 ABI（HostAPI/AdminHostAPI/RPC 形态/DTO/manifest/definePlugin
+                     + 'db'/'user'/'snapshot' 服务契约：SqliteDb/UserService/SnapshotService）
   webui-contract/    UI 插件 ABI（UiPlugin/UiHostAPI + 内核 DTO 镜像，零依赖）
   domain/            Entry 聚合、Money、ULID、事件、ports + 内存实现（零 IO）
   kernel/            错误模型、EventBus、Registry（三来源/unavailable）、
-                     Services、LedgerService、Dispatcher、PluginHost（L1 load/
-                     loadFile/reload 回滚）、loader（唯一文件名 bust）、
+                     Services、LedgerService（stats 含 byRecorder）、Dispatcher、
+                     PluginHost（L1 load/loadFile/reload 回滚）、loader（唯一文件名 bust）、
                      plugin-fs（安装管理 + UI 插件目录）、kernel 组装、命令注册
+                     （entry/stats/type/field/user/snapshot/plugin/host/commands）
   storage-sqlite/    WAL、迁移框架（V1 全 DDL + V2 recorder 索引）、两仓储实现
   host/              常驻宿主：socket-server、worker（L2 引导 + postMessage RPC 桥）、
-                     supervisor（退避重启/优雅停机/forceKill）、admin 门面、组装
-  http-rpc/          统一调用协议 HTTP 编码/解码（statusForErrorCode 等）
+                     supervisor（退避重启/优雅停机/forceKill）、admin 门面、组装（提供 'db' 服务）
+  http-rpc/          统一调用协议 HTTP 编码/解码（statusForErrorCode 等；503/404 映射）
   webui-shell/       Vite+React19+Tailwind v4+zustand；import map 外置 react
                      （public/vendor/*）；shell 零业务视图；UI 插件宿主 loader
                      （启停/热替换失败保留旧版）
 plugins/
-  core-types/        L1 基础类型（M6 升完全体）
+  core-types/        L1 完全体：大/小类型层级（parentKey，<parent>-<leaf> 前缀 key）
+                     + lucide 图标 + payment_platform 枚举字段
   cli/               ledger bin：混合会话、全套命令、ledger host / backup / ui *
+                     / user / snapshot；冷引导提供 'db' 服务
   http/              L2 worker：POST /rpc（经 http-rpc）
   webui/             L2 worker：serve shell + /api/rpc + UI 插件文件（safeJoin 防穿越）
-  webui-core-views/  UI 插件：记账表单（注册表驱动同源渲染）/流水/详情+修订+作废
+  webui-core-views/  UI 插件：记账表单（层级分组下拉/注册表驱动）/流水/详情+修订+作废/身份显示
+  dataviews/         UI 插件：概览页 4 widget（月度趋势/类型分布/付款平台/记录者），
+                     纯 div/CSS 条形 + 方向/日期多维过滤；聚合纯函数单测
+  user/              L1 + 服务提供者：users 表自带（经 'db' 服务）、种子 me、'user' 服务
+  snapshot/          L1 + 服务提供者：全库 backup / 账本级 JSON、ATTACH 事务整表回迁、
+                     账本级按原 id upsert（revision 续写）
   mcp/               冷引导 stdio JSON-RPC；tool schema 即时从注册表构建
 ```
 
-统一调用协议命令面（dispatcher）：`entry.add/get/list/revise/void/revisions`、`stats.summary/monthly/byType/byDirection`、`type.register/list/get`、`field.register/list/get`、`plugin.list/load/unload/reload/install/uninstall/update`（admin 注入时全集）、`host.info/shutdown`、`commands.list`。
+统一调用协议命令面（dispatcher）：`entry.add/get/list/revise/void/revisions`、`stats.summary/monthly/byType/byDirection/byRecorder`、`type.register/list/get`、`field.register/list/get`、`user.get/list`、`snapshot.create/list/restore`、`plugin.list/load/unload/reload/install/uninstall/update`（admin 注入时全集）、`host.info/shutdown`、`commands.list`。
 
 ## 4. 关键实现决策（对文档的落地补充）
 
@@ -77,6 +91,11 @@ plugins/
 8. **MCP tool schema 即时构建**：`tools/list` 与 `tools/call` 每次重建（注册新字段立即反映，与 CLI flag/WebUI 表单同源）。
 9. **迁移框架**：`schema_migrations` 表 + 事务逐版本应用；V2 = `idx_entries_recorder`。演练测试在 `packages/storage-sqlite/src/storage.test.ts`。
 10. **backup**：`plugins/cli/src/backup.ts` 用 better-sqlite3 `db.backup(dest)`，`ledger backup [-o file]`。
+11. **'db' 服务（M6）**：L1 插件（user/snapshot）不自带原生依赖——安装到任意 LEDGER_HOME 的插件目录无法解析仓库内 node_modules 的 better-sqlite3。正解：**入口装配共享自己的连接**（`cold-boot.ts` / `host.ts` 经 `kernel.services.provide('db', db)`），插件消费 `SqliteDb` 结构子集（契约在 plugin-contract）。dist 零外部 import（tsup `noExternal: [/./]`），安装自包含。
+12. **user.*/snapshot.* 薄转发（M6）**：dispatcher 命令转发到服务提供者插件；不在场 → `SERVICE_UNAVAILABLE`（明确降级而非静默）。服务层错误带 code（如 `SNAPSHOT_NOT_FOUND`），kernel 命令层 `withCode` 翻译进错误模型。
+13. **类型层级 key（M6）**：小类型用 `<parent>-<leaf>` 前缀（`food-coffee`），避免与用户运行时注册的短 key 冲突（不同 owner 冲突是设计语义）。
+14. **全库快照回迁（M6）**：不用文件替换（需关 db/重启宿主），改 **ATTACH + 单事务整表 DELETE+INSERT SELECT**——同连接内完成、失败自动 ROLLBACK、无需宿主配合；回迁后 kernel 命令层 `registry.load()` 重载内存注册表。账本级回迁 = 按原 id upsert（`INSERT OR REPLACE` entries + `INSERT OR IGNORE` revisions），revision 从快照续写。
+15. **stats.byRecorder（M6）**：recorder 维度进内核纯函数（与 byType 同构），CLI/MCP/WebUI 同源；extra 字段维度（付款平台分布）留在前端聚合（entry.list），不给内核加 byExtra。
 
 ## 5. 踩坑记录（恢复时先读，都是已消耗的时间）
 
@@ -94,57 +113,24 @@ plugins/
 12. **无外部依赖的 ULID**：domain/src/ulid.ts 自实现（Crockford base32 + 同毫秒单调递增），不要引入 ulid 包。
 13. **webui-core-views 的产物断言**：vite lib mode 未压缩，import 语句带空格（`from "react"` 而非 `from"react"`）。
 14. **registry 在测试中的快捷访问**：`kernel.pluginHost.deps.registry`（HostApiDeps 暴露）；AppError 断言用 `(e as {code?}).code`，`.toThrow(/CODE/)` 匹配的是 message 不含 code。
+15. **注释里的 `*/` 序列**（M6）：块注释中写 `user.*/snapshot.*` 会提前终止注释 → esbuild 语法错误。星点组合与斜杠之间加空格。
+16. **vitest 不解析动态 import 的未声明依赖**（M6）：`await import('@ledger/domain')` 在未声明 devDep 的包里直接失败（vite resolve 阶段）。用静态 import 并把依赖写进 devDependencies。
+17. **安装态插件的原生依赖**（M6）：插件 dist 若 import better-sqlite3，安装到 `~/.ledger` 后模块解析必然失败。见决策 #11——入口经 'db' 服务共享连接，插件 dist 零外部 import。
+18. **ATTACH 库的表存在性检查**（M6）：`sqlite_master` 是每库一张——检查 `snap.entries` 必须查 `snap.sqlite_master`，查主库 `sqlite_master` 里名为 `snap.entries` 的表永远为空（整表回迁被静默跳过）。
 
-## 6. M6 待办（下一步，按序实施与提交）
+## 6. 后续可能的方向（非待办，仅备忘）
 
-按 PRD/ARCHITECTURE：**plugin-user → plugin-core-types 完全体 → plugin-dataviews → plugin-snapshot**，每个完成后跑全量验收，M6 可整体一次提交或分四次提交（建议分四次，沿用现有提交规范）。
+M6 完成后 PRD 范围已闭环。若继续演进，候选方向（均不破坏现有架构）：
 
-### 6.1 plugin-user（L1 + 服务提供者）
-
-- 位置：`plugins/user/`（骨架已存在，src 只有占位 index）
-- 数据：`users` 表已在 V1 DDL（id/name/kind: human|bot/is_default/created_at）——用 better-sqlite3 直接读写（内核无感知，插件自带表访问；参考 storage-sqlite 的用法，经 host.meta.dataDir 定位 db）
-- manifest：`{ name: 'plugin-user', isolation: 'inprocess', provides: ['user'] }`
-- activate：
-  - 首次启动种子默认用户 `me`（is_default=1）
-  - `host.services.provide('user', {...})`：服务面至少 `getUserId(): string`（当前默认身份）、`getUser(id)`、`listUsers()`、`setUserName(id, name)`（可按需加）
-  - 注册命令（dispatcher 目前无 user.*；可经插件用 `host.dispatch`？——注意：插件没有直接注册 dispatcher 命令的 API。**方案**：经 kernel 增加一个通用机制或在 host 侧挂命令。最简单合契约的做法：把 user 查询命令注册进 dispatcher —— 建议在 kernel `commands.ts` 增加 `user.get/user.list` 转发到 services.get('user')，保持"管理入口不唯一"哲学；或者不动 kernel，webui 直接 `client.call('plugin.list')` 式扩展。**决策待定，倾向 kernel 加薄转发命令（约 10 行）**）
-- 验收：装上后 `services.get('user')` 可用；webui 前端能显示访问者身份（经统一调用协议拿到当前用户名）；停用插件服务自动注销、消费方 `onAvailable` 收到通知；不装时其他插件降级（recorder 回退 `me`）
-
-### 6.2 plugin-core-types 完全体（L1）
-
-- 类型层级：大类型 + 小类型（`parentKey`，DDL 已有列；Registry/commands 已支持 parentKey 传参）
-- lucide 图标：`icon` 字段已在贡献与 DDL
-- 付款平台等枚举字段：**field_defs 注册**（`payment_platform` enum: alipay/wechat/bank/cash + 图标），scope both
-- 升级 `plugins/core-types/src/index.ts` 的 TYPES 数组为层级结构（大： 餐饮/交通/购物/居住/娱乐/医疗/人情/教育…；小： 餐饮→ 咖啡/外卖/买菜…），并在 activate 里加 registerField
-- 验收：`type list` 可见层级与图标；WebUI 记账表单类型下拉按层级分组、付款平台下拉出现（同源）；统计 byType 正常
-
-### 6.3 plugin-dataviews（UI 插件 + 内核侧查询）
-
-- 位置：`plugins/dataviews/`（骨架存在）
-- 形态：UI 插件（同 webui-core-views 的构建方式：vite lib mode + ui-plugin.json + external react）；内核侧无需新命令——`stats.monthly/byType/byDirection` + `entry.list`（recorder 维度聚合可前端算或加 `stats.byRecorder`——若加则动 kernel/ledger.ts 四个纯函数之一 + commands 注册，成本低）
-- 贡献：`registerWidget`（月度趋势条形、类型分布、付款平台分布、recorder 维度）到概览页；图表用纯 div/CSS 条形即可（不引图表库，马的标尺）
-- 验收：WebUI 概览页出现数据视图卡片；多维过滤可用
-
-### 6.4 plugin-snapshot（L1 + 服务提供者）
-
-- 位置：`plugins/snapshot/`
-- 两种粒度：
-  - 全库：复用 SQLite backup（参照 `plugins/cli/src/backup.ts`），输出 `<home>/snapshots/<ts>.db`
-  - 账本级：按 `book_id` 导出 JSON（entries + revisions + 相关 type/field defs）
-- 回迁：全库 = 文件替换（需宿主配合：替换前关 db → copy → 重开，或提示重启宿主）；账本级 = 导入 JSON（生成新 id 或按原 id upsert——保留原 id + revision 续写）
-- 命令：`snapshot.create/list/restore`（kernel commands 薄转发或插件内实现 + dispatcher 注册问题同 6.1 的决策）；CLI 子命令 `ledger snapshot create/restore/list`
-- provides: ['snapshot']
-- 验收：创建全库快照 → 记几笔 → 回迁到快照 → 数据回到快照点；账本级同理；单文件即备份单元
-
-### 6.5 收尾
-
-- README 状态段更新（实施完成、快速上手命令）
-- PRD 第 7 节里程碑表打勾状态（可选）
-- 最终全量验收：build + test + typecheck + git log 检查
+- user：多用户切换（`LEDGER_RECORDER` 之外的默认身份切换命令）、bot 身份管理
+- snapshot：快照保留策略（数量/时限清理）、自动定时快照（宿主侧）
+- dataviews：预算对比 widget、导出 PNG/CSV
+- kernel：`entry.list` 游标分页、stats 缓存
+- webui：设置页（插件启停 UI 化）
 
 ## 7. 恢复检查清单
 
 1. `git log --oneline` 确认 HEAD；`git status` 应干净
-2. `pnpm install && pnpm build && pnpm -r --no-bail test && pnpm typecheck` 全绿基线（69 tests）
+2. `pnpm install && pnpm build && pnpm -r --no-bail test && pnpm typecheck` 全绿基线（84 tests）
 3. 读本文第 5 节踩坑记录（避免重蹈）
-4. 从第 6 节继续 M6；每完成一个插件：全量验收 → 提交（规范：`M6(x/4): plugin-xxx ...` 或并入一次 M6 提交）
+4. 实施已完成；新工作从第 6 节候选方向或 PRD 之外的新需求开始，流程沿用：实现 → 全量验收 → 提交

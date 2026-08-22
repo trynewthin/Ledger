@@ -205,6 +205,7 @@ export interface ServicesAPI {
 - `consumes` 一律可选依赖：服务缺失时插件自行降级（如无 user 插件时 recorder 回退 `me` 约定），不存在"加载失败级联"
 - 服务随提供者停用/热替换自动注销，消费方经 `onAvailable` 感知失效与新版本就绪
 - 无版本协商、无服务注册中心持久化——服务名即契约，个人系统的边界
+- 提供者不限于插件：入口装配也提供 `db` 服务（共享已打开的 SQLite 连接），L1 插件的自带表经此读写（见决策 31）
 
 **核心插件全景**（分两梯队）：
 
@@ -344,13 +345,13 @@ extra 纪律：domain 层永不拒绝未注册键；已注册字段在所有入�
 
 | 里程碑 | 内容 | 关键验收 |
 |---|---|---|
-| M0 | 仓库骨架 + 工具链 | 空包可构建可测试 |
-| M1 | domain + storage-sqlite + kernel（注册表/事件/宿主/能力面，暂无热更新）+ plugin-core-types | 零插件自洽测试通过（第一原则的可执行证明），**此后作为永久 CI 门禁**——任何使内核依赖插件的改动立即红；type 插件装/卸后统计均正确；修订/作废/统计全通 |
-| M2 | plugin-cli | 双路径自动切换；动态 flag 生成；admin：install/uninstall/字段注册；日常记账可用 |
-| M3 | host + L1 热替换回滚 + L2 supervisor + plugin-http | L1 重载失败自动回滚；杀 HTTP worker 宿主存活自动拉起 |
-| M4 | plugin-webui（webui-shell + UI 插件宿主 + webui-core-views；http-rpc 此时从 plugin-http 抽出） | 空 shell 零 UI 插件可运行；core-views 装后记账/流水/详情可用；字段注册后表单自动出新控件；UI 插件启停即时生效；webui worker 被杀自动拉起、浏览器重连 |
-| M5 | plugin-mcp + 收尾 | MCP 客户端记账查询；错误码全入口贯穿；迁移演练 V1→V2；`ledger backup` |
-| M6 | 核心功能插件第二梯队：plugin-user（user 服务）→ plugin-core-types 完全体（类型层级/图标/付款平台）→ plugin-dataviews → plugin-snapshot | user 服务就绪后 webui 显示访问者身份、后续插件可获 userId；类型层级与图标在表单/统计生效；多维数据视图可用；快照按粒度创建与回迁成功 |
+| M0 ✅ | 仓库骨架 + 工具链 | 空包可构建可测试 |
+| M1 ✅ | domain + storage-sqlite + kernel（注册表/事件/宿主/能力面，暂无热更新）+ plugin-core-types | 零插件自洽测试通过（第一原则的可执行证明），**此后作为永久 CI 门禁**——任何使内核依赖插件的改动立即红；type 插件装/卸后统计均正确；修订/作废/统计全通 |
+| M2 ✅ | plugin-cli | 双路径自动切换；动态 flag 生成；admin：install/uninstall/字段注册；日常记账可用 |
+| M3 ✅ | host + L1 热替换回滚 + L2 supervisor + plugin-http | L1 重载失败自动回滚；杀 HTTP worker 宿主存活自动拉起 |
+| M4 ✅ | plugin-webui（webui-shell + UI 插件宿主 + webui-core-views；http-rpc 此时从 plugin-http 抽出） | 空 shell 零 UI 插件可运行；core-views 装后记账/流水/详情可用；字段注册后表单自动出新控件；UI 插件启停即时生效；webui worker 被杀自动拉起、浏览器重连 |
+| M5 ✅ | plugin-mcp + 收尾 | MCP 客户端记账查询；错误码全入口贯穿；迁移演练 V1→V2；`ledger backup` |
+| M6 ✅ | 核心功能插件第二梯队：plugin-user（user 服务）→ plugin-core-types 完全体（类型层级/图标/付款平台）→ plugin-dataviews → plugin-snapshot | user 服务就绪后 webui 显示访问者身份、后续插件可获 userId；类型层级与图标在表单/统计生效；多维数据视图可用；快照按粒度创建与回迁成功 |
 
 ## 12. 决策记录（讨论全程已确认）
 
@@ -386,3 +387,4 @@ extra 纪律：domain 层永不拒绝未注册键；已注册字段在所有入�
 | 28 | 类型体系 | 大类型 + 小类型层级（type_defs.parent_key）+ lucide 图标（icon）；付款平台等枚举字段走 field_defs，enum_values 结构化 {value,label,icon?} |
 | 29 | 快照粒度 | 全库级（SQLite backup）与账本级（按 book_id 导出）两种粒度；回迁 = 恢复到指定快照 |
 | 30 | 马的标尺（整体审阅纪律） | 每项新增过三问：四肢躯干（核心能力/长远奔跑）？肌肉（优雅/健硕）？毛发（not now）？已修剪：users.avatar、ui.settings 空扩展点、http-rpc 预建共享包（推迟到 M4）、core-views 统计图表（归 dataviews） |
+| 31 | 插件自带表的存储访问（M6 实施决策） | 入口装配（冷引导/常驻宿主）经 services 提供 `db`（better-sqlite3 连接的结构子集，契约固化于 plugin-contract），L1 插件（user/snapshot）经此读写自带表；插件 dist 零外部 import（tsup noExternal），安装到任意 LEDGER_HOME 自包含。全库快照回迁用 ATTACH + 事务整表替换（无需重启宿主），回迁后 kernel 重载注册表 |
