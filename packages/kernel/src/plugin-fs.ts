@@ -76,11 +76,12 @@ export async function installPluginDir(sourceDir: string, home: string): Promise
     recursive: true,
     filter: (src) => {
       const rel = src.slice(sourceDir.length)
-      // 只携带运行所需：目录、plugin.json、main 所在目录（dist）、静态资产、根级入口脚本
+      // 只携带运行所需：目录、plugin.json、dist、shell 前端产物、静态资产、根级入口脚本
       return (
         rel === '' ||
         rel === '/plugin.json' ||
         rel.startsWith('/dist') ||
+        rel.startsWith('/shell') ||
         rel.startsWith('/assets') ||
         /^\/[^/]+\.(mjs|cjs|js|json|css|html)$/.test(rel)
       )
@@ -107,6 +108,87 @@ export async function setPluginEnabled(name: string, home: string, enabled: bool
   if (!config.plugins[name]) config.plugins[name] = { enabled }
   else config.plugins[name]!.enabled = enabled
   await writePluginsConfig(home, config)
+}
+
+// ---------------------------------------------------------------------------
+// UI 插件（webui shell 内的浏览器插件）目录管理
+// ---------------------------------------------------------------------------
+
+export interface UiPluginDirManifest {
+  name: string
+  version?: string
+  entry?: string
+}
+
+export function uiPluginsDirOf(home: string): string {
+  return join(home, 'ui-plugins')
+}
+
+export interface InstalledUiPlugin {
+  name: string
+  version: string
+  entry: string
+  dir: string
+}
+
+export async function listUiPlugins(home: string): Promise<InstalledUiPlugin[]> {
+  const dir = uiPluginsDirOf(home)
+  let entries: string[]
+  try {
+    entries = await readdir(dir)
+  } catch {
+    return []
+  }
+  const out: InstalledUiPlugin[] = []
+  for (const name of entries.sort()) {
+    const pluginDir = join(dir, name)
+    try {
+      const raw = JSON.parse(await (await import('node:fs/promises')).readFile(join(pluginDir, 'ui-plugin.json'), 'utf8')) as UiPluginDirManifest
+      out.push({
+        name: raw.name ?? name,
+        version: raw.version ?? '0.0.0',
+        entry: raw.entry ?? './index.js',
+        dir: pluginDir,
+      })
+    } catch {
+      // 无 ui-plugin.json 的目录跳过
+    }
+  }
+  return out
+}
+
+/** 安装 UI 插件目录（复制 index/assets/ui-plugin.json） */
+export async function installUiPluginDir(sourceDir: string, home: string): Promise<InstalledUiPlugin> {
+  const { readFile } = await import('node:fs/promises')
+  let manifest: UiPluginDirManifest
+  try {
+    manifest = JSON.parse(await readFile(join(sourceDir, 'ui-plugin.json'), 'utf8')) as UiPluginDirManifest
+  } catch {
+    throw new AppError('PLUGIN_LOAD_FAILED', `missing/invalid ui-plugin.json in ${sourceDir}`)
+  }
+  const target = join(uiPluginsDirOf(home), manifest.name)
+  await rm(target, { recursive: true, force: true })
+  await mkdir(dirname(target), { recursive: true })
+  await cp(sourceDir, target, {
+    recursive: true,
+    filter: (src) => {
+      const rel = src.slice(sourceDir.length)
+      return (
+        rel === '' ||
+        rel === '/ui-plugin.json' ||
+        /^\/[^/]+\.(mjs|js|css|json|html|svg|png)$/.test(rel) ||
+        rel.startsWith('/assets')
+      )
+    },
+  })
+  return { name: manifest.name, version: manifest.version ?? '0.0.0', entry: manifest.entry ?? './index.js', dir: target }
+}
+
+export async function uninstallUiPluginDir(name: string, home: string): Promise<void> {
+  const installed = await listUiPlugins(home)
+  const target = installed.find((p) => p.name === name)
+  if (!target) throw new AppError('PLUGIN_NOT_FOUND', `ui plugin not installed: ${name}`)
+  await rm(target.dir, { recursive: true, force: true })
 }
 
 async function dirExists(p: string): Promise<boolean> {

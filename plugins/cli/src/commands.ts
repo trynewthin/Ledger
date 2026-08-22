@@ -4,7 +4,7 @@ import type { Session } from './session.js'
 import { camelFromKebab, unwrap } from './result.js'
 import { CliError } from './errors.js'
 import { dayEnd, dayStart, formatMoney, formatTs, parseAmountInput, parseOccurredAtInput, printTable } from './output.js'
-import { installPluginDir, listInstalledPlugins, uninstallPluginDir } from '@ledger/kernel'
+import { installPluginDir, installUiPluginDir, listInstalledPlugins, listUiPlugins, uninstallPluginDir, uninstallUiPluginDir } from '@ledger/kernel'
 
 export interface CliContext {
   session: Session
@@ -371,6 +371,36 @@ export function buildProgram(ctx: CliContext): Command {
       await uninstallPluginDir(name, ctx.home)
       if (ctx.json) console.log(JSON.stringify({ uninstalled: name }))
       else console.log(`✓ 已卸载 ${name}`)
+    })
+
+  // ---- UI 插件管理（webui shell 内的浏览器插件） ----
+  const uiCmd = program.command('ui').description('UI 插件管理（webui）')
+  uiCmd
+    .command('install <dir>')
+    .description('安装 UI 插件目录（含 ui-plugin.json）')
+    .action(async (dir: string) => {
+      const installed = await installUiPluginDir(dir, ctx.home)
+      if (ctx.json) console.log(JSON.stringify(installed, null, 2))
+      else console.log(`✓ UI 插件已安装 ${installed.name} v${installed.version}`)
+    })
+  uiCmd
+    .command('uninstall <name>')
+    .description('卸载 UI 插件')
+    .action(async (name: string) => {
+      await uninstallUiPluginDir(name, ctx.home)
+      if (ctx.json) console.log(JSON.stringify({ uninstalled: name }))
+      else console.log(`✓ UI 插件已卸载 ${name}`)
+    })
+  uiCmd
+    .command('list')
+    .description('列出已安装 UI 插件')
+    .action(async () => {
+      const list = await listUiPlugins(ctx.home)
+      if (ctx.json) return console.log(JSON.stringify(list, null, 2))
+      printTable(
+        ['插件', '版本', '入口', '目录'],
+        list.map((p) => [p.name, p.version, p.entry, p.dir]),
+      )
     })
 
   program

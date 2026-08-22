@@ -1,0 +1,5 @@
+{
+  "name": "plugin-webui",
+  "main": "./dist/index.js",
+  "isolation": "worker"
+}
