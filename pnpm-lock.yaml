@@ -173,7 +173,27 @@ importers:
 
   plugins/snapshot: {}
 
-  plugins/user: {}
+  plugins/user:
+    dependencies:
+      '@ledger/plugin-contract':
+        specifier: workspace:^
+        version: link:../../packages/plugin-contract
+    devDependencies:
+      '@ledger/domain':
+        specifier: workspace:^
+        version: link:../../packages/domain
+      '@ledger/kernel':
+        specifier: workspace:^
+        version: link:../../packages/kernel
+      '@ledger/storage-sqlite':
+        specifier: workspace:^
+        version: link:../../packages/storage-sqlite
+      '@types/better-sqlite3':
+        specifier: ^9.6.0
+        version: 9.6.0
+      better-sqlite3:
+        specifier: ^12
+        version: 12.11.1
 
   plugins/webui:
     dependencies:

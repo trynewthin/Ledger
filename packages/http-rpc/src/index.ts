@@ -29,6 +29,7 @@ export function statusForErrorCode(code: string): number {
     case 'FIELD_KEY_TAKEN':
     case 'FIELD_UNKNOWN':
     case 'PLUGIN_NOT_FOUND':
+    case 'USER_NOT_FOUND':
       return 404
     case 'VALIDATION_ERROR':
     case 'INVALID_AMOUNT':
@@ -42,6 +43,8 @@ export function statusForErrorCode(code: string): number {
       return 400
     case 'ENTRY_VOIDED':
       return 409
+    case 'SERVICE_UNAVAILABLE':
+      return 503
     case 'FORBIDDEN':
       return 403
     case 'NOT_SUPPORTED':

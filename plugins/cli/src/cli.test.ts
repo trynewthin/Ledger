@@ -65,18 +65,18 @@ describe('ledger CLI e2e（冷引导路径）', () => {
 
   it('field register → dynamic flag appears → enum enforced → strict mode', async () => {
     const reg = await ledger(
-      'field', 'add', 'payment_platform',
-      '-l', '付款平台', '-s', 'both', '-v', 'enum',
-      '-e', 'alipay:支付宝,wechat:微信',
+      'field', 'add', 'mood',
+      '-l', '心情', '-s', 'both', '-v', 'enum',
+      '-e', 'happy:开心,calm:平静',
     )
     expect(reg.code).toBe(0)
 
-    // 动态 flag：--payment-platform 由注册表自动生成
-    const ok = await ledger('add', '-d', 'expense', '-a', '5', '--payment-platform', 'alipay', '--json')
+    // 动态 flag：--mood 由注册表自动生成
+    const ok = await ledger('add', '-d', 'expense', '-a', '5', '--mood', 'happy', '--json')
     expect(ok.code).toBe(0)
-    expect(parseJson(ok.stdout).extra).toEqual({ payment_platform: 'alipay' })
+    expect(parseJson(ok.stdout).extra).toEqual({ mood: 'happy' })
 
-    const badEnum = await ledger('add', '-d', 'expense', '-a', '5', '--payment-platform', 'cash')
+    const badEnum = await ledger('add', '-d', 'expense', '-a', '5', '--mood', 'angry')
     expect(badEnum.code).toBe(1)
     expect(badEnum.stderr).toContain('ENUM_VIOLATION')
 
@@ -150,6 +150,30 @@ describe('ledger CLI e2e（冷引导路径）', () => {
 
     const got = await ledger('get', foodEntry.id, '--json')
     expect(parseJson(got.stdout).entry.type).toBe('food')
+  })
+
+  it('plugin-user: install → user.* 可用 → uninstall → 明确降级 SERVICE_UNAVAILABLE', async () => {
+    const install = await ledger('plugin', 'install', join(REPO, 'plugins/user'))
+    expect(install.code).toBe(0)
+
+    const got = await ledger('user', 'get', '--json')
+    expect(got.code).toBe(0)
+    expect(parseJson(got.stdout)).toMatchObject({ id: 'me', name: 'me', kind: 'human', isDefault: true })
+
+    const list = await ledger('user', 'list', '--json')
+    expect(parseJson(list.stdout)).toHaveLength(1)
+
+    const uninstall = await ledger('plugin', 'uninstall', 'plugin-user')
+    expect(uninstall.code).toBe(0)
+
+    const degraded = await ledger('user', 'get')
+    expect(degraded.code).toBe(1)
+    expect(degraded.stderr).toContain('SERVICE_UNAVAILABLE')
+
+    // 数据流不受影响：recorder 回退 'me'
+    const add = await ledger('add', '-d', 'expense', '-a', '1', '--json')
+    expect(add.code).toBe(0)
+    expect(parseJson(add.stdout).recorder).toBe('me')
   })
 
   it('monthly stats output', async () => {

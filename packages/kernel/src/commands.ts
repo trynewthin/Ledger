@@ -1,25 +1,28 @@
-import type { Direction, FieldEnumValue, HostControlAPI, PluginAdminAPI } from '@ledger/plugin-contract'
+import type { Direction, FieldEnumValue, HostControlAPI, PluginAdminAPI, UserService } from '@ledger/plugin-contract'
 import { Dispatcher } from './dispatcher.js'
 import { AppError } from './errors.js'
 import { LedgerService } from './ledger.js'
 import { PluginHost } from './plugin-host.js'
 import { Registry } from './registry.js'
+import type { ServiceRegistry } from './services.js'
 import { listEntriesSchema, parseOrThrow } from './validation.js'
 
 /**
- * 命令注册表：entry.* / stats.* / type.* / field.* / plugin.*（admin）。
+ * 命令注册表：entry.* / stats.* / type.* / field.* / user.* / snapshot.* / plugin.*（admin）。
  * 业务命令与 admin 命令同一通道（统一调用协议）。
  * admin 注入时（常驻宿主），plugin.* 全集 + host.* 生效；否则仅冷引导子集。
+ * user.* / snapshot.* 是薄转发：真实实现在服务提供者插件（不在场 → SERVICE_UNAVAILABLE）。
  */
 export function registerCoreCommands(deps: {
   dispatcher: Dispatcher
   ledger: LedgerService
   registry: Registry
   pluginHost: PluginHost
+  services: ServiceRegistry
   admin?: PluginAdminAPI
   hostControl?: HostControlAPI
 }): void {
-  const { dispatcher, ledger, registry, pluginHost, admin, hostControl } = deps
+  const { dispatcher, ledger, registry, pluginHost, services, admin, hostControl } = deps
 
   const entryFilter = (payload: any) => (payload ? parseOrThrow(listEntriesSchema, payload, 'filter') : undefined)
 
@@ -74,6 +77,16 @@ export function registerCoreCommands(deps: {
     return def
   })
 
+  // ---- user.*：薄转发到 'user' 服务（plugin-user 提供；不在场则明确降级） ----
+  dispatcher.register('user.get', (payload) => {
+    const svc = requireUserService(services)
+    const id = typeof payload?.id === 'string' && payload.id !== '' ? payload.id : svc.getUserId()
+    const user = svc.getUser(id)
+    if (!user) throw new AppError('USER_NOT_FOUND', `user "${id}" not found`)
+    return user
+  })
+  dispatcher.register('user.list', () => requireUserService(services).listUsers())
+
   // ---- 插件管理（admin 命令；管理入口不唯一：任何白名单特权插件共用） ----
   dispatcher.register('plugin.list', () => (admin ? admin.list() : pluginHost.list()))
   if (admin) {
@@ -127,6 +140,14 @@ function requireString(v: unknown, field: string): string {
     throw new AppError('VALIDATION_ERROR', `payload.${field} must be a non-empty string`)
   }
   return v
+}
+
+function requireUserService(services: ServiceRegistry): UserService {
+  const svc = services.get<UserService>('user')
+  if (!svc) {
+    throw new AppError('SERVICE_UNAVAILABLE', `service "user" is not available (install/enable plugin-user)`)
+  }
+  return svc
 }
 
 function parseTypeRegistration(payload: any) {

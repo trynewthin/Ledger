@@ -2,10 +2,25 @@
   "name": "@ledger/plugin-user",
   "version": "0.1.0",
   "type": "module",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ledger/plugin-contract": "workspace:^"
+  },
+  "devDependencies": {
+    "@ledger/kernel": "workspace:^",
+    "@ledger/storage-sqlite": "workspace:^",
+    "better-sqlite3": "^12",
+    "@types/better-sqlite3": "^9.6.0",
+    "@ledger/domain": "workspace:^"
   }
 }

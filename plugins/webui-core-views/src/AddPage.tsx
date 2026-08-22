@@ -22,6 +22,7 @@ export function AddPage({ client }: Props) {
   const [types, setTypes] = useState<TypeDefDTO[]>([])
   const [fields, setFields] = useState<FieldDefDTO[]>([])
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+  const [userName, setUserName] = useState<string | null>(null)
 
   const loadDefs = async () => {
     const [t, f] = await Promise.all([
@@ -34,6 +35,11 @@ export function AddPage({ client }: Props) {
 
   useEffect(() => {
     void loadDefs().catch(() => undefined)
+    // 当前身份（plugin-user 提供 user.get；不在场则静默降级为 recorder 默认值）
+    client
+      .call<{ name: string }>('user.get', {})
+      .then((u) => setUserName(u?.name ?? null))
+      .catch(() => setUserName(null))
   }, [])
 
   const visibleFields = fields.filter((f) => !f.unavailable && (f.scope === 'both' || f.scope === direction))
@@ -67,6 +73,9 @@ export function AddPage({ client }: Props) {
 
   return (
     <div style={{ maxWidth: 420 }}>
+      {userName && (
+        <div style={{ fontSize: 12, color: '#71717a', marginBottom: 10 }}>记录者身份：{userName}</div>
+      )}
       <div style={rowStyle}>
         <button
           onClick={() => setDirection('expense')}

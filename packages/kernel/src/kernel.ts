@@ -52,7 +52,7 @@ export function createKernel(opts: KernelOptions): Kernel {
       hostControl: config.hostControl,
     },
   )
-  registerCoreCommands({ dispatcher, ledger, registry, pluginHost, admin: config.pluginsAdmin, hostControl: config.hostControl })
+  registerCoreCommands({ dispatcher, ledger, registry, pluginHost, services, admin: config.pluginsAdmin, hostControl: config.hostControl })
   return {
     events,
     registry,

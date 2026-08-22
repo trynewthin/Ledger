@@ -52,6 +52,8 @@ export async function startHost(opts: { home: string; withSocket?: boolean }): P
     config: { dataDir: home, coreMaintainedPlugins: [...DEFAULT_CORE_MAINTAINED], pluginsAdmin: plugins, hostControl: host },
   })
   kernelRef = kernel
+  // 入口共享自己的 db 连接：L1 插件（user/snapshot 等）自带表经 'db' 服务读写，内核无感知
+  kernel.services.provide('db', db, 'host')
 
   const supervisor = new WorkerSupervisor(() => kernelRef, home, console)
   supervisorRef = supervisor

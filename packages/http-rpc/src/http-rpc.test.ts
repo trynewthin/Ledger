@@ -10,6 +10,8 @@ describe('http-rpc error model mapping', () => {
     expect(statusForErrorCode('ENUM_VIOLATION')).toBe(400)
     expect(statusForErrorCode('TYPE_DIRECTION_MISMATCH')).toBe(400)
     expect(statusForErrorCode('ENTRY_VOIDED')).toBe(409)
+    expect(statusForErrorCode('SERVICE_UNAVAILABLE')).toBe(503)
+    expect(statusForErrorCode('USER_NOT_FOUND')).toBe(404)
     expect(statusForErrorCode('FORBIDDEN')).toBe(403)
     expect(statusForErrorCode('NOT_SUPPORTED')).toBe(501)
     expect(statusForErrorCode('INTERNAL')).toBe(500)

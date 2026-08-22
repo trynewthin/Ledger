@@ -270,6 +270,45 @@ export interface ServicesAPI {
   onAvailable(name: string, cb: () => void): void
 }
 
+// ---------------------------------------------------------------------------
+// 服务契约（服务名即契约；此处固化消费方依赖的结构子集）
+// ---------------------------------------------------------------------------
+
+/**
+ * 'db' 服务：入口装配（冷引导/常驻宿主）提供的 SQLite 连接，
+ * better-sqlite3 Database 的结构子集。L1 插件自带表直接经此读写（内核无感知）；
+ * L2 worker 不跨线程提供。
+ */
+export interface SqliteStatement {
+  run(...params: unknown[]): unknown
+  get(...params: unknown[]): unknown
+  all(...params: unknown[]): unknown[]
+}
+
+export interface SqliteDb {
+  prepare(sql: string): SqliteStatement
+  exec(sql: string): void
+  /** 增量备份到目标文件；无此能力时消费方应改用 VACUUM INTO */
+  backup?(destination: string): Promise<void>
+}
+
+export interface UserRecord {
+  id: string
+  name: string
+  kind: 'human' | 'bot'
+  isDefault: boolean
+  createdAt: number
+}
+
+/** 'user' 服务（plugin-user 提供）：身份目录。entry.recorder 即用户 id。 */
+export interface UserService {
+  /** 当前默认身份 id（recorder 的解析目标） */
+  getUserId(): string
+  getUser(id: string): UserRecord | undefined
+  listUsers(): UserRecord[]
+  setUserName(id: string, name: string): UserRecord
+}
+
 export interface Logger {
   debug(msg: string, ...args: unknown[]): void
   info(msg: string, ...args: unknown[]): void

@@ -24,6 +24,8 @@ export async function assembleColdKernel(home: string): Promise<ColdBoot> {
     metaStore: new SqliteMetadataStore(db),
     config: { dataDir: home, coreMaintainedPlugins: [...DEFAULT_CORE_MAINTAINED] },
   })
+  // 入口共享自己的 db 连接：L1 插件（user/snapshot 等）自带表经 'db' 服务读写，内核无感知
+  kernel.services.provide('db', db, 'entry')
   const boot = await bootstrapInstalledPlugins(kernel, home)
   if (boot.skippedWorker.length > 0) {
     console.error(`提示: worker 隔离插件需常驻宿主运行，已跳过: ${boot.skippedWorker.join(', ')}`)

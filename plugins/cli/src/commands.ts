@@ -314,6 +314,28 @@ export function buildProgram(ctx: CliContext): Command {
       )
     })
 
+  // ---- 身份目录（plugin-user 提供 'user' 服务；不在场则 SERVICE_UNAVAILABLE） ----
+  const userCmd = program.command('user').description('身份目录（plugin-user）')
+  userCmd
+    .command('list')
+    .description('列出用户')
+    .action(async () => {
+      const users = unwrap(await call('user.list'))
+      if (ctx.json) return console.log(JSON.stringify(users, null, 2))
+      printTable(
+        ['id', '名称', '种类', '默认', '创建时间'],
+        users.map((u: any) => [u.id, u.name, u.kind === 'bot' ? '机器人' : '人', u.isDefault ? '是' : '否', formatTs(u.createdAt)]),
+      )
+    })
+  userCmd
+    .command('get [id]')
+    .description('查看用户（缺省为当前默认身份）')
+    .action(async (id?: string) => {
+      const user = unwrap(await call('user.get', id ? { id } : {}))
+      if (ctx.json) return console.log(JSON.stringify(user, null, 2))
+      console.log(`${user.name} (${user.id}) · ${user.kind === 'bot' ? '机器人' : '人'}${user.isDefault ? ' · 默认' : ''}`)
+    })
+
   // ---- 插件管理（AdminHostAPI 语义；冷引导下 install/uninstall 为文件操作） ----
   const pluginCmd = program.command('plugin').description('插件管理（admin）')
   pluginCmd
