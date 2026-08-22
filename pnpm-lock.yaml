@@ -123,6 +123,13 @@ importers:
       commander:
         specifier: ^13
         version: 13.1.0
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^9.6.0
+        version: 9.6.0
+      better-sqlite3:
+        specifier: ^12
+        version: 12.11.1
 
   plugins/core-types:
     dependencies:
@@ -145,7 +152,24 @@ importers:
         specifier: workspace:^
         version: link:../../packages/plugin-contract
 
-  plugins/mcp: {}
+  plugins/mcp:
+    dependencies:
+      '@ledger/domain':
+        specifier: workspace:^
+        version: link:../../packages/domain
+      '@ledger/kernel':
+        specifier: workspace:^
+        version: link:../../packages/kernel
+      '@ledger/plugin-cli':
+        specifier: workspace:^
+        version: link:../cli
+      '@ledger/plugin-contract':
+        specifier: workspace:^
+        version: link:../../packages/plugin-contract
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
 
   plugins/snapshot: {}
 

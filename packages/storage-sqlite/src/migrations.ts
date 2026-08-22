@@ -82,6 +82,13 @@ export const MIGRATIONS: Migration[] = [
       `)
     },
   },
+  {
+    version: 2,
+    name: 'recorder index',
+    up: (db) => {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_entries_recorder ON entries(recorder, book_id)')
+    },
+  },
 ]
 
 /** 迁移框架：记录于 schema_migrations，逐版本事务应用 */

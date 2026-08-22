@@ -157,4 +157,20 @@ describe('ledger CLI e2e（冷引导路径）', () => {
     expect(out.code).toBe(0)
     expect(out.stdout).toMatch(/月份/)
   })
+
+  it('ledger backup：完整数据库副本，数据可读', async () => {
+    const before = parseJson((await ledger('list', '--all', '--json')).stdout).total
+    const backupFile = join(home, 'ledger-backup-test.db')
+    const out = await ledger('backup', '-o', backupFile)
+    expect(out.code).toBe(0)
+    expect(out.stdout).toContain('备份完成')
+
+    const Database = (await import('better-sqlite3')).default
+    const copy = new Database(backupFile)
+    const count = (copy.prepare('SELECT COUNT(*) AS c FROM entries').get() as { c: number }).c
+    const integrity = copy.pragma('integrity_check', { simple: true })
+    copy.close()
+    expect(count).toBe(before)
+    expect(integrity).toBe('ok')
+  })
 })

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { resolveLedgerHome } from './paths.js'
 import { runHostMain } from './host.js'
 

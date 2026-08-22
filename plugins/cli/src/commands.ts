@@ -1,10 +1,13 @@
 import { Command } from 'commander'
+import { join } from 'node:path'
 import type { FieldDefDTO, TypeDefDTO } from '@ledger/plugin-contract'
 import type { Session } from './session.js'
 import { camelFromKebab, unwrap } from './result.js'
 import { CliError } from './errors.js'
 import { dayEnd, dayStart, formatMoney, formatTs, parseAmountInput, parseOccurredAtInput, printTable } from './output.js'
 import { installPluginDir, installUiPluginDir, listInstalledPlugins, listUiPlugins, uninstallPluginDir, uninstallUiPluginDir } from '@ledger/kernel'
+import { backupDatabase } from './backup.js'
+import { dbPath } from './paths.js'
 
 export interface CliContext {
   session: Session
@@ -408,6 +411,21 @@ export function buildProgram(ctx: CliContext): Command {
     .description('启动常驻宿主（前台运行；CLI 将自动走 RPC 路径）')
     .action(() => {
       // 实际启动在 runCli 中拦截（不经会话）
+    })
+
+  // ---- 备份 ----
+  program
+    .command('backup')
+    .description('备份数据库（SQLite backup，单文件即备份单元）')
+    .option('-o, --out <file>', '目标文件（默认 <home>/backups/ledger-<时间戳>.db）')
+    .action(async (opts) => {
+      const ts = new Date()
+      const p = (n: number) => String(n).padStart(2, '0')
+      const stamp = `${ts.getFullYear()}${p(ts.getMonth() + 1)}${p(ts.getDate())}-${p(ts.getHours())}${p(ts.getMinutes())}${p(ts.getSeconds())}`
+      const dest = opts.out ?? join(ctx.home, 'backups', `ledger-${stamp}.db`)
+      await backupDatabase(dbPath(ctx.home), dest)
+      if (ctx.json) console.log(JSON.stringify({ backup: dest }))
+      else console.log(`✓ 备份完成 → ${dest}`)
     })
 
   return program

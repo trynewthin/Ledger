@@ -23,5 +23,9 @@
     "@ledger/plugin-contract": "workspace:^",
     "@ledger/storage-sqlite": "workspace:^",
     "commander": "^13"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^12"
   }
 }

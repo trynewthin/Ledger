@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { mkdtempSync } from 'node:fs'
 import { createEntry } from '@ledger/domain'
 import { openDatabase } from './db.js'
-import { appliedVersions, migrate } from './migrations.js'
+import { appliedVersions, migrate, MIGRATIONS } from './migrations.js'
 import { SqliteEntryRepository } from './entry-repository.js'
 import { SqliteMetadataStore } from './metadata-store.js'
 
@@ -17,13 +17,13 @@ function freshDb(name: string) {
 }
 
 describe('migrations', () => {
-  it('applies V1 on fresh db and is idempotent', () => {
+  it('applies all versions on fresh db and is idempotent', () => {
     const db = freshDb('migrate')
     const applied = migrate(db)
-    expect(applied).toEqual([1])
-    expect(appliedVersions(db)).toEqual([1])
+    expect(applied).toEqual([1, 2])
+    expect(appliedVersions(db)).toEqual([1, 2])
     migrate(db)
-    expect(appliedVersions(db)).toEqual([1])
+    expect(appliedVersions(db)).toEqual([1, 2])
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name)
     for (const t of ['entries', 'entry_revisions', 'type_defs', 'field_defs', 'users', 'schema_migrations']) {
       expect(tables).toContain(t)
@@ -34,6 +34,38 @@ describe('migrations', () => {
     const db = freshDb('wal')
     migrate(db)
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal')
+  })
+
+  it('迁移演练 V1→V2：旧库升级，数据完好，索引到位', () => {
+    const path = join(tmp, 'drill.db')
+    // 1) 建一个停留在 V1 的旧库并写入数据
+    const db1 = openDatabase(path)
+    migrate(db1, MIGRATIONS.filter((m) => m.version === 1))
+    expect(appliedVersions(db1)).toEqual([1])
+    const repo1 = new SqliteEntryRepository(db1)
+    const now = Date.now()
+    const e = createEntry({
+      direction: 'expense', amountMinor: 9900, currency: 'CNY',
+      occurredAt: now, recordedAt: now, source: 'cli', recorder: 'me', schemaVersion: 1,
+      extra: { note: '旧数据' },
+    })
+    repo1.insert(e)
+    db1.close()
+
+    // 2) 新版本代码打开旧库：自动迁移到 V2，数据完好
+    const db2 = openDatabase(path)
+    const applied = migrate(db2)
+    expect(applied).toEqual([2])
+    expect(appliedVersions(db2)).toEqual([1, 2])
+    const repo2 = new SqliteEntryRepository(db2)
+    expect(repo2.get(e.id)!.extra).toEqual({ note: '旧数据' })
+    const index = db2
+      .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_entries_recorder'")
+      .get()
+    expect(index).toBeDefined()
+    // 迁移幂等
+    expect(migrate(db2)).toEqual([])
+    db2.close()
   })
 })
 
