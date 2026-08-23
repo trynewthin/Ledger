@@ -4,13 +4,14 @@
 
 ## 文档
 
-- [docs/PRD.md](./docs/PRD.md) — 产品需求：定位、场景、功能范围、里程碑
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 技术架构：包结构、插件契约、数据模型、全部决策记录
-- [docs/PROGRESS.md](./docs/PROGRESS.md) — 实施进度与恢复指南：里程碑状态、踩坑记录、待办
+- [docs/PROJECT_OVERVIEW.md](./docs/PROJECT_OVERVIEW.md) — 项目概要：定位、核心模型、架构、运行方式与当前边界
+- [docs/FEATURE_DEVELOPMENT_GUIDE.md](./docs/FEATURE_DEVELOPMENT_GUIDE.md) — 功能开发驾驭工程指南：改动落点、跨层链路与验收门禁
+- [docs/PLUGIN_DEVELOPMENT_GUIDE.md](./docs/PLUGIN_DEVELOPMENT_GUIDE.md) — 插件开发驾驭工程指南：L1/L2、冷引导与 UI 插件开发
+- [docs/archive/README.md](./docs/archive/README.md) — 已归档的原始 PRD、架构决策与 M0–M6 实施记录
 
 ## 状态
 
-**实施完成（2026-08-23）**：M0–M6 全部里程碑完成并验收提交，84 个测试全绿、typecheck 全绿。M6 交付 plugin-user（身份目录 + 'db'/'user' 服务契约）、core-types 完全体（类型层级 + 图标 + 付款平台字段）、plugin-dataviews（概览页数据视图 UI 插件 + stats.byRecorder）、plugin-snapshot（全库/账本级快照与回迁）。详见 [PROGRESS.md](./docs/PROGRESS.md)。
+**实施完成（2026-08-23）**：M0–M6 全部里程碑完成并验收提交，84 个测试全绿、typecheck 全绿。M6 交付 plugin-user（身份目录 + 'db'/'user' 服务契约）、core-types 完全体（类型层级 + 图标 + 付款平台字段）、plugin-dataviews（概览页数据视图 UI 插件 + stats.byRecorder）、plugin-snapshot（全库/账本级快照与回迁）。当前系统说明见 [项目概要](./docs/PROJECT_OVERVIEW.md)，历史里程碑见 [归档进度](./docs/archive/PROGRESS.md)。
 
 ## 快速上手
 
