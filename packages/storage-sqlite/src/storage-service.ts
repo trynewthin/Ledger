@@ -1,16 +1,19 @@
-import { createHash } from 'node:crypto'
-import { mkdir, readFile, stat } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
 import type {
   StorageArtifact,
   StorageEntry,
   StorageImportPlan,
   StorageImportResult,
+  StorageSnapshot,
+  StorageSnapshotSwitchResult,
   StorageValue,
 } from '@ledger/plugin-contract'
 
 const STORAGE_FORMAT_VERSION = 1
+const SNAPSHOT_ID_RE = /^snapshot-\d+-[0-9a-f-]+\.db$/
 
 /**
  * SQLite 存储核心：管理共享连接与无业务轻量数据，并提供整体数据导入导出。
@@ -182,9 +185,71 @@ export class SqliteStorageService {
     }
   }
 
+  /** 创建完整原生快照：仅复制当前 Storage Core 管理的 SQLite 数据库。 */
+  async createSnapshot(): Promise<StorageSnapshot> {
+    const id = `snapshot-${Date.now()}-${randomUUID()}.db`
+    const path = join(this.snapshotsDir(), id)
+    await this.exportAll({ destination: path })
+    return this.snapshotInfo(id)
+  }
+
+  async listSnapshots(): Promise<StorageSnapshot[]> {
+    let names: string[]
+    try {
+      names = await readdir(this.snapshotsDir())
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
+    const snapshots = await Promise.all(
+      names.filter((name) => SNAPSHOT_ID_RE.test(name)).map((id) => this.snapshotInfo(id).catch(() => undefined)),
+    )
+    return snapshots.filter((snapshot): snapshot is StorageSnapshot => snapshot !== undefined).sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  async deleteSnapshot(id: string): Promise<void> {
+    const path = this.snapshotPath(id)
+    try {
+      await rm(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw snapshotNotFound(id)
+      throw error
+    }
+  }
+
+  async switchSnapshot(id: string): Promise<StorageSnapshotSwitchResult> {
+    const snapshot = await this.snapshotInfo(id)
+    const imported = await this.importAll(snapshot.path, { createSafetyBackup: true })
+    return { snapshot, ...(imported.safetyBackup ? { safetyBackup: imported.safetyBackup } : {}) }
+  }
+
   close(): void {
     this.db.close()
   }
+
+  private snapshotsDir(): string {
+    return join(dirname(this.databasePath), 'snapshots')
+  }
+
+  private snapshotPath(id: string): string {
+    if (!SNAPSHOT_ID_RE.test(id)) throw snapshotNotFound(id)
+    return join(this.snapshotsDir(), id)
+  }
+
+  private async snapshotInfo(id: string): Promise<StorageSnapshot> {
+    const path = this.snapshotPath(id)
+    try {
+      const file = await stat(path)
+      return { id, path, createdAt: file.mtimeMs, sizeBytes: file.size }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw snapshotNotFound(id)
+      throw error
+    }
+  }
+}
+
+function snapshotNotFound(id: string): Error {
+  return Object.assign(new Error(`snapshot not found: ${id}`), { code: 'SNAPSHOT_NOT_FOUND' })
 }
 
 function userTables(db: Database.Database): string[] {

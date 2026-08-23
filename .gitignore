@@ -8,3 +8,4 @@ coverage/
 tmp/
 ledger.config.json
 .ledger-data/
+.ledger/

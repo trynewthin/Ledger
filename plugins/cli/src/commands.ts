@@ -68,6 +68,16 @@ export function buildProgram(ctx: CliContext): Command {
 
   const call = (command: string, payload?: unknown) => ctx.session.call(command, payload)
 
+  // 真实初始化在 runCli 中发生，避免在打开现有账本会话前创建项目资源。
+  program
+    .command('init')
+    .description('初始化当前项目：创建 ledger.config.json 与 .ledger 存储目录')
+  program
+    .command('config')
+    .description('项目配置管理')
+    .command('init')
+    .description('初始化当前项目配置与已安装插件的初始化器')
+
   // ---- 记账 ----
   const add = program
     .command('add')
@@ -341,7 +351,46 @@ export function buildProgram(ctx: CliContext): Command {
       console.log(`${user.name} (${user.id}) · ${user.kind === 'bot' ? '机器人' : '人'}${user.isDefault ? ' · 默认' : ''}`)
     })
 
-  // ---- 快照与回迁（plugin-snapshot 提供 'snapshot' 服务；单文件即备份单元） ----
+  // ---- Storage Core 全库快照：零插件可用，仅提供创建、列出、删除和切换 ----
+  const storageCmd = program.command('storage').description('Storage Core 管理')
+  const storageSnapshotCmd = storageCmd.command('snapshot').description('完整存储快照')
+  storageSnapshotCmd
+    .command('create')
+    .description('创建当前完整 SQLite 快照')
+    .action(async () => {
+      const snapshot = unwrap(await call('storage.snapshot.create'))
+      if (ctx.json) console.log(JSON.stringify(snapshot, null, 2))
+      else console.log(`✓ 存储快照已创建 → ${snapshot.id}`)
+    })
+  storageSnapshotCmd
+    .command('list')
+    .description('列出完整存储快照')
+    .action(async () => {
+      const snapshots = unwrap<any[]>(await call('storage.snapshot.list'))
+      if (ctx.json) return console.log(JSON.stringify(snapshots, null, 2))
+      printTable(
+        ['快照', '大小', '创建时间'],
+        snapshots.map((snapshot) => [snapshot.id, `${Math.ceil(snapshot.sizeBytes / 1024)}KB`, formatTs(snapshot.createdAt)]),
+      )
+    })
+  storageSnapshotCmd
+    .command('delete <id>')
+    .description('删除完整存储快照')
+    .action(async (id: string) => {
+      const result = unwrap(await call('storage.snapshot.delete', { id }))
+      if (ctx.json) console.log(JSON.stringify(result, null, 2))
+      else console.log(`✓ 存储快照已删除 → ${id}`)
+    })
+  storageSnapshotCmd
+    .command('switch <id>')
+    .description('切换到完整存储快照（当前数据会先安全备份）')
+    .action(async (id: string) => {
+      const result = unwrap<any>(await call('storage.snapshot.switch', { id }))
+      if (ctx.json) console.log(JSON.stringify(result, null, 2))
+      else console.log(`✓ 已切换到存储快照 → ${result.snapshot.id}`)
+    })
+
+  // ---- 快照与回迁（plugin-snapshot 提供账本级扩展；全库底层操作由 Storage Core 提供） ----
   const snapCmd = program.command('snapshot').description('快照与回迁（plugin-snapshot）')
   snapCmd
     .command('create')

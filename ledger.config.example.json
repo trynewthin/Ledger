@@ -1,6 +1,6 @@
 {
   "storage": {
-    "dataDir": "./.ledger-data"
+    "dataDir": "./.ledger"
   },
   "plugins": {
     "plugin-http": {

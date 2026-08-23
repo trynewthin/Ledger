@@ -1,5 +1,5 @@
 import { readFile, watch, type FSWatcher } from 'node:fs'
-import { access } from 'node:fs/promises'
+import { access, mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { ConfigStatus, ConfigValue } from '@ledger/plugin-contract'
@@ -23,7 +23,7 @@ export interface ProjectConfigOptions {
 }
 
 const DEFAULT_CONFIG: ConfigObject = {
-  storage: { dataDir: '~/.ledger' },
+  storage: { dataDir: './.ledger' },
   plugins: {},
 }
 
@@ -184,9 +184,15 @@ export async function findProjectRoot(startDir: string = process.cwd()): Promise
       await access(join(cursor, 'pnpm-workspace.yaml'))
       return cursor
     } catch {
-      const parent = dirname(cursor)
-      if (parent === cursor) return resolve(startDir)
-      cursor = parent
+      try {
+        // init 也服务于普通 Git 项目；.git 可以是目录或 worktree 指针文件。
+        await access(join(cursor, '.git'))
+        return cursor
+      } catch {
+        const parent = dirname(cursor)
+        if (parent === cursor) return resolve(startDir)
+        cursor = parent
+      }
     }
   }
 }
@@ -204,6 +210,26 @@ export async function openRuntimeConfig(options: {
     watch: options.watch,
     ...(configuredHome ? { overrides: { storage: { dataDir: configuredHome } } } : {}),
   })
+}
+
+/**
+ * 创建项目根配置而不覆盖已有配置。配置初始化与资源初始化分离：
+ * Storage Core 和插件在随后注册自己的初始化器，保持 Config Core 无业务。
+ */
+export async function initializeProjectConfig(options: {
+  projectRoot: string
+}): Promise<{ config: ProjectConfigStore; created: boolean }> {
+  const projectRoot = resolve(options.projectRoot)
+  const filePath = join(projectRoot, PROJECT_CONFIG_FILE)
+  await mkdir(projectRoot, { recursive: true })
+  let created = false
+  try {
+    await access(filePath)
+  } catch {
+    await writeFile(filePath, JSON.stringify({ storage: { dataDir: './.ledger' }, plugins: {} }, null, 2) + '\n', 'utf8')
+    created = true
+  }
+  return { config: await ProjectConfigStore.open({ projectRoot }), created }
 }
 
 function validateConfig(value: unknown): asserts value is ConfigObject {

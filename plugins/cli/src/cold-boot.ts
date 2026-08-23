@@ -1,6 +1,13 @@
 import { mkdir } from 'node:fs/promises'
 import { openDatabase, migrate, SqliteEntryRepository, SqliteMetadataStore, SqliteStorageService } from '@ledger/storage-sqlite'
-import { bootstrapInstalledPlugins, createKernel, DEFAULT_CORE_MAINTAINED, type ConfigProvider, type Kernel } from '@ledger/kernel'
+import {
+  bootstrapInstalledPlugins,
+  createKernel,
+  DEFAULT_CORE_MAINTAINED,
+  type ConfigProvider,
+  type Kernel,
+  type ProjectInitializationProvider,
+} from '@ledger/kernel'
 import { dbPath } from './paths.js'
 
 type Db = ReturnType<typeof openDatabase>
@@ -8,6 +15,7 @@ type Db = ReturnType<typeof openDatabase>
 export interface ColdBoot {
   kernel: Kernel
   db: Db
+  initialization: ProjectInitializationProvider
   close(): void
 }
 
@@ -15,7 +23,11 @@ export interface ColdBoot {
  * 冷引导：本地组装内核 + 已安装 L1 插件（与 host 同一内核，组装方式不同）。
  * CLI / MCP 共用此形态：加载 → 执行 → 退出。
  */
-export async function assembleColdKernel(home: string, configProvider?: ConfigProvider): Promise<ColdBoot> {
+export async function assembleColdKernel(
+  home: string,
+  configProvider?: ConfigProvider,
+  initializationProvider?: ProjectInitializationProvider,
+): Promise<ColdBoot> {
   await mkdir(home, { recursive: true })
   const db = openDatabase(dbPath(home))
   migrate(db)
@@ -28,6 +40,8 @@ export async function assembleColdKernel(home: string, configProvider?: ConfigPr
       coreMaintainedPlugins: [...DEFAULT_CORE_MAINTAINED],
       configProvider,
       storageProvider: storage,
+      initializationProvider,
+      projectRoot: configProvider?.projectRoot ?? process.cwd(),
     },
   })
   // 入口共享自己的 db 连接：L1 插件（user/snapshot 等）自带表经 'db' 服务读写，内核无感知
@@ -39,6 +53,7 @@ export async function assembleColdKernel(home: string, configProvider?: ConfigPr
   return {
     kernel,
     db,
+    initialization: kernel.initialization,
     close: () => storage.close(),
   }
 }

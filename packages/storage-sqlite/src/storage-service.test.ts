@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { openDatabase } from './db.js'
 import { migrate } from './migrations.js'
 import { SqliteStorageService } from './storage-service.js'
+import { initializeStorageProject } from './project-init.js'
 
 const dirs: string[] = []
 
@@ -22,6 +23,37 @@ afterEach(async () => {
 })
 
 describe('SqliteStorageService', () => {
+  it('creates, lists, switches, and deletes complete core snapshots', async () => {
+    const { service } = await fixture('snapshots')
+    service.set('plugin-demo', 'state', { version: 1 })
+    const snapshot = await service.createSnapshot()
+
+    expect((await service.listSnapshots()).map((item) => item.id)).toEqual([snapshot.id])
+    service.set('plugin-demo', 'state', { version: 2 })
+
+    const switched = await service.switchSnapshot(snapshot.id)
+    expect(switched.snapshot.id).toBe(snapshot.id)
+    expect(service.get('plugin-demo', 'state')).toEqual({ version: 1 })
+
+    await service.deleteSnapshot(snapshot.id)
+    expect(await service.listSnapshots()).toEqual([])
+    await expect(service.switchSnapshot(snapshot.id)).rejects.toThrow(/snapshot not found/)
+    service.close()
+  })
+
+  it('initializes the declared project storage directory and migrates its database', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ledger-storage-project-'))
+    dirs.push(dir)
+    const dataDir = join(dir, '.ledger')
+
+    const initialized = await initializeStorageProject({ dataDir, projectRoot: dir })
+    expect(initialized.dataDir).toBe(dataDir)
+    expect(initialized.databasePath).toBe(join(dataDir, 'ledger.db'))
+    expect(initialized.appliedMigrations).toEqual([1, 2])
+    expect(initialized.gitignoreEntry).toBe('.ledger/')
+    initialized.close()
+  })
+
   it('provides owner-isolated non-business key/value storage', async () => {
     const { service } = await fixture('kv')
     service.set('plugin-a', 'settings/theme', { color: 'blue' })

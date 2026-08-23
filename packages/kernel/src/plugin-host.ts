@@ -20,6 +20,7 @@ export interface PluginHostConfig {
   /** AdminHostAPI 白名单（内核配置，实际授权以此为准） */
   coreMaintainedPlugins?: string[]
   dataDir: string
+  projectRoot: string
   /** 插件管理面（install/uninstall 等文件操作由宿主注入） */
   pluginsAdmin?: PluginAdminAPI
   hostControl?: HostControlAPI
@@ -133,7 +134,12 @@ export class PluginHost {
     const name = plugin.manifest.name
     const api = createPluginHostApi(
       this.deps,
-      { pluginName: name, dataDir: this.config.dataDir, configReads: plugin.manifest.config?.reads },
+      {
+        pluginName: name,
+        dataDir: this.config.dataDir,
+        projectRoot: this.config.projectRoot,
+        configReads: plugin.manifest.config?.reads,
+      },
       this.isAdmin(name),
     )
     try {
@@ -168,6 +174,7 @@ export class PluginHost {
       this.deps.events.unsubscribeOwner(name)
       this.deps.services.revokeOwner(name)
       this.deps.config.unsubscribeOwner(name)
+      this.deps.initialization.unregisterOwner(name)
       this.deps.log.warn(`plugin ${name} deactivate threw; its registrations marked unavailable`, e)
     }
   }
@@ -178,6 +185,7 @@ export class PluginHost {
     this.deps.events.unsubscribeOwner(name)
     this.deps.services.revokeOwner(name)
     this.deps.config.unsubscribeOwner(name)
+    this.deps.initialization.unregisterOwner(name)
   }
 
   list(): PluginInfo[] {

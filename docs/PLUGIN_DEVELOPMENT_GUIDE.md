@@ -53,6 +53,8 @@ export default definePlugin({
 
 只有白名单中的核心维护插件会获得 `AdminHostAPI.plugins` 和 `AdminHostAPI.host`。仅在 manifest 声明 `capabilities: ['admin']` 不会自动获得权限。
 
+通信插件可调用 `commands.describe` 获取能力目录，并把声明的绑定编译为自身协议。协议适配器只负责路径参数、query/body 转换、调用上下文和响应编码；业务校验与执行继续由 dispatcher 后的应用服务负责。
+
 ## 3. 标准目录
 
 一个后端插件的最小结构：
@@ -102,6 +104,20 @@ host.config.subscribe('plugins.plugin-example.port', (next, previous) => {
 ```
 
 未声明的路径会被宿主拒绝。L2 worker 使用同一 API，配置变化由 supervisor 桥接。
+
+### 3.1 扩展项目初始化
+
+L1 插件可以在 `activate()` 中注册幂等初始化器。`ledger init` 会先完成 Config Core 与 Storage Core，再运行已安装插件的初始化器：
+
+```ts
+async activate(host) {
+  host.initialization.register('seed-cache', async () => {
+    await host.storage.set('bootstrap/version', 1)
+  })
+}
+```
+
+初始化器应只创建插件所需的项目资源、轻量状态或结构化存储，不应写入业务账目。插件停用时，宿主会清理其尚未执行的初始化注册。L2 worker 不参与该生命周期，因为它不能向主进程传递初始化回调。
 
 ## 4. 构建后端插件
 
@@ -228,7 +244,7 @@ const cached = await host.storage.list('cache/')
 
 只有 Entry、revision、type_defs 和 field_defs 等内核数据应由 storage-sqlite 管理。插件表不能反向成为内核统计成立的前提。
 
-整体快照使用 `host.storage.exportAll()`、`inspectImport()` 和 `importAll()`。这些接口只处理完整存储数据；账本级合并等业务规则应留在上层插件。
+完整快照使用 `host.storage.createSnapshot()`、`listSnapshots()`、`deleteSnapshot()` 和 `switchSnapshot()`；底层导入导出仍可使用 `exportAll()`、`inspectImport()` 和 `importAll()`。核心快照只处理完整存储数据；账本级合并等业务规则应留在上层插件。
 
 ## 8. 订阅事件
 
@@ -253,6 +269,8 @@ L2 插件仍实现相同 `LedgerPlugin`，但 manifest 使用 `isolation: 'worke
 3. 在 `deactivate()` 停止接收连接并关闭全部资源。
 4. 不依赖模块级状态跨 reload 保留。
 5. 通过 `host.dispatch()` 转发业务请求。
+
+HTTP 类插件应使用能力目录生成资源路由，并保留统一 RPC 入口处理自动化客户端。路由匹配需要优先静态路径、解码路径参数、按描述转换 query 基础类型，并保留类型化错误码。
 
 worker 内的 HostAPI 是 postMessage 代理。不要假设对象引用、数据库连接或 service 实例可以跨线程传递。worker 崩溃由 supervisor 退避重启，插件应能重复 activate。
 

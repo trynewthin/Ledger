@@ -299,6 +299,15 @@ export interface ConfigAPI {
   subscribe(path: string, handler: (next: ConfigValue | undefined, previous: ConfigValue | undefined) => void): void
 }
 
+/**
+ * 项目初始化扩展点。仅负责创建无业务项目资源；插件注册的处理器必须幂等，
+ * 因为用户可以重复运行 `ledger init`。
+ */
+export interface ProjectInitializationAPI {
+  projectRoot: string
+  register(name: string, initialize: () => void | Promise<void>): void
+}
+
 export type StorageValue = ConfigValue
 
 export interface StorageEntry<T extends StorageValue = StorageValue> {
@@ -330,6 +339,19 @@ export interface StorageImportResult {
   safetyBackup?: string
 }
 
+/** Storage Core 管理的完整原生快照；不携带账本级或业务维度语义。 */
+export interface StorageSnapshot {
+  id: string
+  path: string
+  createdAt: number
+  sizeBytes: number
+}
+
+export interface StorageSnapshotSwitchResult {
+  snapshot: StorageSnapshot
+  safetyBackup?: string
+}
+
 /** owner 已由宿主绑定，插件无法越过自己的轻量存储命名空间。 */
 export interface StorageAPI {
   get<T extends StorageValue = StorageValue>(key: string): Promise<T | undefined>
@@ -339,6 +361,10 @@ export interface StorageAPI {
   exportAll(options: { destination: string }): Promise<StorageArtifact>
   inspectImport(source: string): Promise<StorageImportPlan>
   importAll(source: string, options?: { createSafetyBackup?: boolean }): Promise<StorageImportResult>
+  createSnapshot(): Promise<StorageSnapshot>
+  listSnapshots(): Promise<StorageSnapshot[]>
+  deleteSnapshot(id: string): Promise<void>
+  switchSnapshot(id: string): Promise<StorageSnapshotSwitchResult>
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +445,30 @@ export interface RpcRequest {
   context?: { source?: string; recorder?: string }
 }
 
+export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
+
+export interface HttpCommandBinding {
+  method: HttpMethod
+  path: string
+  successStatus?: number
+  /** GET query 的轻量协议转换规则；业务校验仍由应用命令负责。 */
+  query?: Record<string, 'string' | 'number' | 'boolean'>
+}
+
+export interface CommandDescriptor {
+  name: string
+  /** 领域或系统能力边界，如 entry / stats / plugin。 */
+  domain: string
+  action: string
+  description: string
+  inputSchema?: Record<string, unknown>
+  exposure?: {
+    cli?: { command: string }
+    http?: HttpCommandBinding
+    mcp?: { tool: string; variant?: string }
+  }
+}
+
 export interface RpcOk {
   ok: true
   data: unknown
@@ -437,6 +487,7 @@ export interface HostAPI {
   ledger: LedgerAPI
   services: ServicesAPI
   config: ConfigAPI
+  initialization: ProjectInitializationAPI
   storage: StorageAPI
   /** 统一调用协议入口（入口插件转发外部调用的正道；context 缺省以插件身份注入） */
   dispatch(req: RpcRequest): Promise<RpcResult>

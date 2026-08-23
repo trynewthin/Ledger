@@ -53,6 +53,25 @@ describe('services', () => {
   })
 })
 
+describe('command capability discovery', () => {
+  it('describes shared application commands and their natural protocol bindings', async () => {
+    const kernel = createKernel({ repo: new InMemoryEntryRepository(), metaStore: new InMemoryMetadataStore() })
+    const descriptors = await ok<any[]>(kernel, 'commands.describe')
+    const add = descriptors.find((item) => item.name === 'entry.add')
+
+    expect(add).toMatchObject({
+      domain: 'entry',
+      action: 'add',
+      exposure: {
+        cli: { command: 'add' },
+        http: { method: 'POST', path: '/entries' },
+        mcp: { tool: 'add_entry' },
+      },
+      inputSchema: expect.objectContaining({ required: ['direction', 'amountMinor', 'currency'] }),
+    })
+  })
+})
+
 describe('registry unavailable marking', () => {
   it('marks owner unavailable instead of silently dropping', async () => {
     const kernel = createKernel({ repo: new InMemoryEntryRepository(), metaStore: new InMemoryMetadataStore() })

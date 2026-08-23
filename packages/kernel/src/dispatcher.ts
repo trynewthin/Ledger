@@ -1,4 +1,4 @@
-import type { CallContext } from '@ledger/plugin-contract'
+import type { CallContext, CommandDescriptor } from '@ledger/plugin-contract'
 import { DomainError } from '@ledger/domain'
 import { AppError, toErrorEnvelope } from './errors.js'
 import type { Logger } from '@ledger/plugin-contract'
@@ -30,15 +30,16 @@ export type CommandHandler = (payload: any, context: CallContext) => unknown | P
  * source/recorder 是调用链元数据，不是用户输入——这里自动注入。
  */
 export class Dispatcher {
-  private commands = new Map<string, CommandHandler>()
+  private commands = new Map<string, { handler: CommandHandler; descriptor: CommandDescriptor }>()
 
   constructor(private log: Logger = { debug() {}, info() {}, warn() {}, error() {} }) {}
 
-  register(command: string, handler: CommandHandler): void {
-    if (this.commands.has(command)) {
-      throw new Error(`command already registered: ${command}`)
+  register(command: string | CommandDescriptor, handler: CommandHandler): void {
+    const descriptor = typeof command === 'string' ? defaultDescriptor(command) : command
+    if (this.commands.has(descriptor.name)) {
+      throw new Error(`command already registered: ${descriptor.name}`)
     }
-    this.commands.set(command, handler)
+    this.commands.set(descriptor.name, { handler, descriptor: structuredClone(descriptor) })
   }
 
   unregister(command: string): void {
@@ -53,9 +54,22 @@ export class Dispatcher {
     return [...this.commands.keys()].sort()
   }
 
+  /** 能力描述与 handler 同处注册，避免各通信入口维护第二份命令目录。 */
+  describeCommands(): CommandDescriptor[] {
+    return [...this.commands.values()]
+      .map((entry) => structuredClone(entry.descriptor))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  describe(command: string, descriptor: Omit<CommandDescriptor, 'name'>): void {
+    const entry = this.commands.get(command)
+    if (!entry) throw new Error(`cannot describe unregistered command: ${command}`)
+    entry.descriptor = structuredClone({ name: command, ...descriptor })
+  }
+
   async dispatch(req: DispatchRequest): Promise<DispatchResult> {
-    const handler = this.commands.get(req.command)
-    if (!handler) {
+    const entry = this.commands.get(req.command)
+    if (!entry) {
       return { ok: false, error: { code: 'COMMAND_NOT_FOUND', message: `unknown command: ${req.command}` } }
     }
     const context: CallContext = {
@@ -63,7 +77,7 @@ export class Dispatcher {
       recorder: req.context?.recorder ?? 'me',
     }
     try {
-      const data = await handler(req.payload ?? {}, context)
+      const data = await entry.handler(req.payload ?? {}, context)
       return { ok: true, data }
     } catch (e) {
       if (e instanceof DomainError) {
@@ -76,5 +90,15 @@ export class Dispatcher {
       this.log.error(`command ${req.command} failed`, e)
       return { ok: false, error: { code: 'INTERNAL', message: String(e) } }
     }
+  }
+}
+
+function defaultDescriptor(name: string): CommandDescriptor {
+  const [domain = 'internal', ...actionParts] = name.split('.')
+  return {
+    name,
+    domain,
+    action: actionParts.join('.') || 'invoke',
+    description: name,
   }
 }

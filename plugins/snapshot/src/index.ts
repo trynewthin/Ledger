@@ -10,7 +10,7 @@ import {
 
 /**
  * plugin-snapshot — 快照与回迁（L1 + 服务提供者），单文件即备份单元。
- * - 全库：委托 Storage Core 整体导出 → <home>/snapshots/full-<ts>.db
+ * - 全库：委托 Storage Core 原生快照 → <home>/snapshots/snapshot-<id>.db
  * - 账本级：<bookId> 的 entries + revisions + 引用的 type/field 定义 → JSON
  * - 回迁：全库 = Storage Core 校验、安全备份与事务整表替换；
  *         账本级 = 按原 id upsert（revision 续写）
@@ -26,7 +26,7 @@ function stamp(d = new Date()): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
 }
 
-const FULL_RE = /^full-(\d{8}-\d{6})\.db$/
+const FULL_RE = /^snapshot-\d+-[0-9a-f-]+\.db$/
 const BOOK_RE = /^book-(.+)-(\d{8}-\d{6})\.json$/
 
 /** 动态列名防注入：JSON 回迁文件的列必须是小写蛇形标识符 */
@@ -77,8 +77,7 @@ export const snapshotPlugin: LedgerPlugin = definePlugin({
     }
 
     const restoreFull = async (file: string): Promise<number> => {
-      const snapPath = join(dir, file)
-      await host.storage.importAll(snapPath, { createSafetyBackup: true })
+      await host.storage.switchSnapshot(file)
       return (db.prepare('SELECT COUNT(*) AS c FROM entries').get() as { c: number }).c
     }
 
@@ -106,9 +105,8 @@ export const snapshotPlugin: LedgerPlugin = definePlugin({
       create: async (scope, bookId = 'default') => {
         let file: string
         if (scope === 'full') {
-          file = `full-${stamp()}.db`
-          const dest = join(dir, file)
-          await host.storage.exportAll({ destination: dest })
+          const snapshot = await host.storage.createSnapshot()
+          file = snapshot.id
           return infoOf(file)
         }
         file = `book-${bookId}-${stamp()}.json`

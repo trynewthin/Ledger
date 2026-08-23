@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -32,6 +32,46 @@ function parseJson<T = any>(out: string): T {
 }
 
 describe('ledger CLI e2e（冷引导路径）', () => {
+  it('init creates root config and the default .ledger storage repository', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'ledger-init-'))
+    try {
+      const { stdout } = await exec('node', [CLI, 'init', '--json'], { cwd: project, env: { ...process.env } })
+      const initialized = parseJson<{ projectRoot: string; dataDir: string; initialized: string[] }>(stdout)
+      const physicalProject = realpathSync(project)
+      expect(initialized).toMatchObject({ projectRoot: physicalProject, dataDir: join(physicalProject, '.ledger'), initialized: ['storage'] })
+      expect(JSON.parse(readFileSync(join(project, 'ledger.config.json'), 'utf8'))).toEqual({
+        storage: { dataDir: './.ledger' },
+        plugins: {},
+      })
+      expect(existsSync(join(project, '.ledger', 'ledger.db'))).toBe(true)
+
+      const rerun = await exec('node', [CLI, 'config', 'init', '--json'], { cwd: project, env: { ...process.env } })
+      expect(parseJson<{ configCreated: boolean; initialized: string[] }>(rerun.stdout)).toMatchObject({
+        configCreated: false,
+        initialized: ['storage'],
+      })
+
+      const pluginDir = join(physicalProject, '.ledger', 'plugins', 'plugin-project-init')
+      mkdirSync(pluginDir, { recursive: true })
+      writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify({ name: 'plugin-project-init', main: './index.mjs', isolation: 'inprocess' }))
+      writeFileSync(join(pluginDir, 'index.mjs'), `export default {
+        manifest: { name: 'plugin-project-init', version: '1.0.0', isolation: 'inprocess' },
+        async activate(host) {
+          host.initialization.register('plugin-project-init.seed', async () => {
+            await host.storage.set('initialized', true)
+          })
+        },
+        async deactivate() {},
+      }`)
+      writeFileSync(join(physicalProject, '.ledger', 'plugins.json'), JSON.stringify({ plugins: { 'plugin-project-init': { enabled: true } } }))
+
+      const pluginInit = await exec('node', [CLI, 'init', '--json'], { cwd: project, env: { ...process.env } })
+      expect(parseJson<{ initialized: string[] }>(pluginInit.stdout).initialized).toEqual(['storage', 'plugin-project-init.seed'])
+    } finally {
+      rmSync(project, { recursive: true, force: true })
+    }
+  })
+
   it('add → list → stats：日常记账闭环', async () => {
     const add1 = await ledger('add', '-d', 'expense', '-a', '12.50', '--json')
     expect(add1.code).toBe(0)
@@ -232,5 +272,16 @@ describe('ledger CLI e2e（冷引导路径）', () => {
     copy.close()
     expect(count).toBe(before)
     expect(integrity).toBe('ok')
+  })
+
+  it('Storage Core snapshot commands work without plugin-snapshot', async () => {
+    const created = parseJson<{ id: string }>((await ledger('storage', 'snapshot', 'create', '--json')).stdout)
+    const listed = parseJson<Array<{ id: string }>>((await ledger('storage', 'snapshot', 'list', '--json')).stdout)
+    expect(listed.some((snapshot) => snapshot.id === created.id)).toBe(true)
+
+    const deleted = await ledger('storage', 'snapshot', 'delete', created.id, '--json')
+    expect(deleted.code).toBe(0)
+    const remaining = parseJson<Array<{ id: string }>>((await ledger('storage', 'snapshot', 'list', '--json')).stdout)
+    expect(remaining.some((snapshot) => snapshot.id === created.id)).toBe(false)
   })
 })

@@ -72,16 +72,36 @@ pnpm typecheck
 1. 在 `packages/kernel/src/ledger.test.ts` 或专用测试中定义业务结果。
 2. 在 `LedgerService` 实现共享用例。
 3. 在 `packages/kernel/src/validation.ts` 定义外部 payload 校验。
-4. 在 `packages/kernel/src/commands.ts` 注册稳定命令名。
+4. 在 `packages/kernel/src/commands.ts` 注册稳定命令名和能力描述。
 5. 通过 `Dispatcher.dispatch()` 验证成功和类型化错误结果。
 6. 按需接入 CLI、MCP 和 UI，但不复制业务计算。
 
 命名约定为 `<领域>.<动作>`，例如 `entry.list`、`stats.byRecorder`。命令 handler 接收 payload 和由 dispatcher 组装的 `CallContext`。
 
+能力描述至少包含 `name`、`domain`、`action` 和 `description`，按需声明：
+
+```ts
+{
+  name: 'entry.add',
+  domain: 'entry',
+  action: 'add',
+  description: '记录一笔账目',
+  exposure: {
+    cli: { command: 'add' },
+    http: { method: 'POST', path: '/entries', successStatus: 201 },
+    mcp: { tool: 'add_entry' },
+  },
+}
+```
+
+HTTP 路由保持资源语义，CLI/MCP 保持各自自然名称。不要机械地把 `entry.add` 暴露成 `/entry.add`，也不要让外部协议名称进入领域服务。
+
 新增命令时还应检查：
 
 - `commands.list` 是否可发现该命令。
+- `commands.describe` 是否包含正确的领域与协议绑定。
 - 冷引导和常驻 RPC 两条路径是否等价。
+- HTTP REST 与 `/rpc` 是否得到相同业务结果和错误码。
 - HTTP 状态映射是否需要新增错误码处理。
 - MCP tool 是否需要即时暴露该能力。
 - UI 是否通过 `LedgerClient.call()` 使用同一命令。
@@ -101,6 +121,8 @@ pnpm typecheck
 
 Storage Core 的整体导入采用“检查兼容性 → 安全备份 → 同一事务逐表替换”。按账本合并、ID 冲突或 revision 续写属于业务语义，继续由 snapshot 等上层插件实现。
 
+完整 SQLite 快照是 Storage Core 的基础能力：创建、列出、删除和切换。核心快照不包含保留策略、调度或账本粒度；这些能力由上层插件按需扩展。
+
 ## 7. 修改配置核心
 
 1. 配置结构保持 JSON 可序列化。
@@ -111,6 +133,8 @@ Storage Core 的整体导入采用“检查兼容性 → 安全备份 → 同一
 6. `storage.dataDir` 等启动级路径变化只标记 `restartRequired`。
 7. 插件读取路径必须加入 `manifest.config.reads`。
 8. 新增配置项时同步 `ledger.config.example.json` 和相关开发文档。
+
+项目初始化由 `ledger init`（别名 `ledger config init`）执行：Config Core 创建根配置，Storage Core 先准备 `storage.dataDir`，随后已安装的 L1 插件可以运行自己注册的幂等初始化器。初始化器只创建项目资源或基础设施数据，不应创建业务账目。
 
 ## 8. 增加动态类型或字段
 

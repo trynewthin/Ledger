@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { ProjectConfigStore } from './config.js'
+import { findProjectRoot, initializeProjectConfig, ProjectConfigStore } from './config.js'
 import { createKernel } from './kernel.js'
 import { InMemoryEntryRepository, InMemoryMetadataStore } from '@ledger/domain'
 import { definePlugin } from '@ledger/plugin-contract'
@@ -20,6 +20,29 @@ afterEach(async () => {
 })
 
 describe('ProjectConfigStore', () => {
+  it('finds a Git project root when a project has no pnpm workspace file', async () => {
+    const root = await projectDir()
+    const nested = join(root, 'packages', 'example')
+    await mkdir(join(root, '.git'))
+    await mkdir(nested, { recursive: true })
+
+    expect(await findProjectRoot(nested)).toBe(root)
+  })
+
+  it('initializes an idempotent project-root config with .ledger storage by default', async () => {
+    const root = await projectDir()
+
+    const first = await initializeProjectConfig({ projectRoot: root })
+    expect(first.created).toBe(true)
+    expect(first.config.filePath).toBe(join(root, 'ledger.config.json'))
+    expect(first.config.get('storage.dataDir')).toBe(join(root, '.ledger'))
+    await first.config.close()
+
+    const second = await initializeProjectConfig({ projectRoot: root })
+    expect(second.created).toBe(false)
+    await second.config.close()
+  })
+
   it('loads repository-root config, resolves storage path, and exposes immutable snapshots', async () => {
     const root = await projectDir()
     await writeFile(

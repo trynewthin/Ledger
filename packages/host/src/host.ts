@@ -58,13 +58,14 @@ export async function startHost(opts: { home: string; withSocket?: boolean; conf
       hostControl: host,
       configProvider: opts.configProvider,
       storageProvider: storage,
+      projectRoot: opts.configProvider?.projectRoot ?? process.cwd(),
     },
   })
   kernelRef = kernel
   // 入口共享自己的 db 连接：L1 插件（user/snapshot 等）自带表经 'db' 服务读写，内核无感知
   kernel.services.provide('db', db, 'host')
 
-  const supervisor = new WorkerSupervisor(() => kernelRef, home, console)
+  const supervisor = new WorkerSupervisor(() => kernelRef, home, console, opts.configProvider?.projectRoot ?? process.cwd())
   supervisorRef = supervisor
 
   const boot = await bootstrapInstalledPlugins(kernel, home, {

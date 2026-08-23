@@ -106,6 +106,15 @@ async function rpc(command: string, payload?: unknown): Promise<any> {
   return { status: res.status, body: (await res.json()) as any }
 }
 
+async function rest(method: string, path: string, body?: unknown): Promise<any> {
+  const res = await fetch(`http://127.0.0.1:${HTTP_PORT}${path}`, {
+    method,
+    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  return { status: res.status, body: (await res.json()) as any }
+}
+
 function writePlugin(dir: string, source: string, manifest?: Record<string, unknown>): void {
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'index.mjs'), source)
@@ -132,6 +141,25 @@ describe('resident host', () => {
     })
     expect(added.result.ok).toBe(true)
     expect(added.result.data.source).toBe('cli')
+  })
+
+  it('Storage Core snapshots work without loading plugin-snapshot', async () => {
+    const before = dataOf(await dispatch('entry.list', { includeVoided: true })).total
+    const created = dataOf(await dispatch('storage.snapshot.create'))
+    expect(created.id).toMatch(/^snapshot-/)
+
+    await dispatch('entry.add', { direction: 'expense', amountMinor: 7, currency: 'CNY' })
+    expect(dataOf(await dispatch('entry.list', { includeVoided: true })).total).toBe(before + 1)
+
+    const switched = dataOf(await dispatch('storage.snapshot.switch', { id: created.id }))
+    expect(switched.snapshot.id).toBe(created.id)
+    expect(dataOf(await dispatch('entry.list', { includeVoided: true })).total).toBe(before)
+
+    await dispatch('storage.snapshot.delete', { id: created.id })
+    const remaining = dataOf(await dispatch('storage.snapshot.list'))
+    expect(remaining.some((item: any) => item.id === created.id)).toBe(false)
+    const missing = await dispatch('storage.snapshot.switch', { id: created.id })
+    expect(missing).toMatchObject({ ok: false, error: { code: 'SNAPSHOT_NOT_FOUND' } })
   })
 
   it('CLI hybrid mode prefers RPC when host is alive', { timeout: 30_000 }, async () => {
@@ -239,6 +267,32 @@ describe('resident host', () => {
     const badPayload = await rpc('entry.add', { direction: 'both', amountMinor: 1, currency: 'CNY' })
     expect(badPayload.status).toBe(400)
     expect(badPayload.body.error.code).toBe('VALIDATION_ERROR')
+
+    // HTTP 保持资源语义，内部仍汇聚到同一个 entry.* 应用命令。
+    const restAdded = await rest('POST', '/entries', { direction: 'expense', amountMinor: 880, currency: 'CNY' })
+    expect(restAdded.status).toBe(201)
+    expect(restAdded.body.data.source).toBe('http')
+    const restId = restAdded.body.data.id
+
+    const restList = await rest('GET', '/entries?direction=expense&limit=1')
+    expect(restList.status).toBe(200)
+    expect(restList.body.data.items).toHaveLength(1)
+
+    const capabilities = await rest('GET', '/capabilities')
+    expect(capabilities.body.data.some((item: any) => item.name === 'entry.add')).toBe(true)
+
+    const badQuery = await rest('GET', '/entries?limit=not-a-number')
+    expect(badQuery.status).toBe(400)
+    expect(badQuery.body.error.code).toBe('VALIDATION_ERROR')
+
+    const restGet = await rest('GET', `/entries/${restId}`)
+    expect(restGet.body.data.id).toBe(restId)
+
+    const restRevise = await rest('PATCH', `/entries/${restId}`, { patch: { amountMinor: 990 }, reason: '更正' })
+    expect(restRevise.body.data.amountMinor).toBe(990)
+
+    const restVoid = await rest('POST', `/entries/${restId}/void`, { reason: '测试作废' })
+    expect(restVoid.body.data.voidedAt).not.toBeNull()
 
     // 杀掉 HTTP worker：宿主存活并自动拉起
     handle.supervisor.forceKill('plugin-http')

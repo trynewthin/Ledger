@@ -14,7 +14,7 @@ import { ServiceRegistry } from './services.js'
 import { Dispatcher } from './dispatcher.js'
 import type { Logger } from '@ledger/plugin-contract'
 import type { ConfigValue, StorageValue } from '@ledger/plugin-contract'
-import type { ConfigProvider, StorageProvider } from './core-services.js'
+import type { ConfigProvider, ProjectInitializationProvider, StorageProvider } from './core-services.js'
 
 export interface HostApiDeps {
   registry: Registry
@@ -23,6 +23,7 @@ export interface HostApiDeps {
   services: ServiceRegistry
   config: ConfigProvider
   storage: StorageProvider
+  initialization: ProjectInitializationProvider
   dispatcher: Dispatcher
   log: Logger
   pluginsAdmin?: PluginAdminAPI
@@ -32,6 +33,7 @@ export interface HostApiDeps {
 export interface HostApiContext {
   pluginName: string
   dataDir: string
+  projectRoot: string
   configReads?: string[]
 }
 
@@ -44,7 +46,7 @@ function ctxFor(name: string, ctx?: Partial<CallContext>): CallContext {
  * 托管项（注册表项/事件订阅/服务）按插件名打标，随 deactivate 自动反注册。
  */
 export function createPluginHostApi(deps: HostApiDeps, ctx: HostApiContext, isAdmin: boolean): HostAPI | AdminHostAPI {
-  const { registry, events, ledger, services, config, storage } = deps
+  const { registry, events, ledger, services, config, storage, initialization } = deps
   const assertConfigRead = (path: string): void => {
     const reads = ctx.configReads ?? []
     if (!reads.some((declared) => path === declared || path.startsWith(`${declared}.`))) {
@@ -113,6 +115,10 @@ export function createPluginHostApi(deps: HostApiDeps, ctx: HostApiContext, isAd
         config.subscribe(path, handler, ctx.pluginName)
       },
     },
+    initialization: {
+      projectRoot: ctx.projectRoot,
+      register: (name, initialize) => initialization.register(name, ctx.pluginName, initialize),
+    },
     storage: {
       get: async <T extends StorageValue = StorageValue>(key: string) => storage.get<T>(ctx.pluginName, key),
       set: async (key, value) => storage.set(ctx.pluginName, key, value),
@@ -121,6 +127,10 @@ export function createPluginHostApi(deps: HostApiDeps, ctx: HostApiContext, isAd
       exportAll: (options) => storage.exportAll(options),
       inspectImport: (source) => storage.inspectImport(source),
       importAll: (source, options) => storage.importAll(source, options),
+      createSnapshot: () => storage.createSnapshot(),
+      listSnapshots: () => storage.listSnapshots(),
+      deleteSnapshot: (id) => storage.deleteSnapshot(id),
+      switchSnapshot: (id) => storage.switchSnapshot(id),
     },
     dispatch: async (req: RpcRequest): Promise<RpcResult> =>
       deps.dispatcher.dispatch({

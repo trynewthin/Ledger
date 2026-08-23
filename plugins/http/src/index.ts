@@ -1,5 +1,12 @@
 import { createServer, type Server } from 'node:http'
-import { definePlugin, type LedgerPlugin, type RpcResult } from '@ledger/plugin-contract'
+import {
+  definePlugin,
+  type CommandDescriptor,
+  type HostAPI,
+  type HttpCommandBinding,
+  type LedgerPlugin,
+  type RpcResult,
+} from '@ledger/plugin-contract'
 
 /**
  * plugin-http — L2 worker 插件：纯 API 入口（程序化访问，无 UI）。
@@ -65,6 +72,99 @@ function sendJson(res: import('node:http').ServerResponse, status: number, body:
   res.end(data)
 }
 
+interface RestRoute {
+  command: string
+  binding: HttpCommandBinding
+  segments: string[]
+}
+
+function compileRestRoutes(descriptors: CommandDescriptor[]): RestRoute[] {
+  return descriptors
+    .flatMap((descriptor) => descriptor.exposure?.http
+      ? [{ command: descriptor.name, binding: descriptor.exposure.http, segments: pathSegments(descriptor.exposure.http.path) }]
+      : [])
+    // 同长度时静态路径优先，避免未来 `/entries/search` 被 `:id` 提前捕获。
+    .sort((a, b) => b.segments.length - a.segments.length || staticSegments(b) - staticSegments(a))
+}
+
+async function handleRestRoute(
+  req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse,
+  routes: RestRoute[],
+  host: HostAPI,
+): Promise<boolean> {
+  const method = req.method ?? 'GET'
+  const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+  const incoming = pathSegments(url.pathname)
+  const route = routes.find((candidate) => candidate.binding.method === method && routeMatches(candidate.segments, incoming))
+  if (!route) return false
+
+  let payload: Record<string, unknown> = {}
+  if (method === 'GET') {
+    try {
+      for (const [key, kind] of Object.entries(route.binding.query ?? {})) {
+        const raw = url.searchParams.get(key)
+        if (raw !== null) payload[key] = parseQueryValue(raw, kind)
+      }
+    } catch (error) {
+      sendJson(res, 400, {
+        ok: false,
+        error: { code: 'VALIDATION_ERROR', message: error instanceof Error ? error.message : String(error) },
+      })
+      return true
+    }
+  } else {
+    try {
+      const raw = await readBody(req)
+      payload = raw.trim() === '' ? {} : JSON.parse(raw) as Record<string, unknown>
+      if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) throw new Error('body must be an object')
+    } catch {
+      sendJson(res, 400, { ok: false, error: { code: 'VALIDATION_ERROR', message: 'request body must be a JSON object' } })
+      return true
+    }
+  }
+
+  for (let index = 0; index < route.segments.length; index++) {
+    const segment = route.segments[index]!
+    if (segment.startsWith(':')) payload[segment.slice(1)] = decodeURIComponent(incoming[index]!)
+  }
+
+  const result = await host.dispatch({
+    command: route.command,
+    payload,
+    context: { source: 'http', recorder: 'me' },
+  })
+  const status = result.ok ? route.binding.successStatus ?? 200 : statusForErrorCode(result.error.code)
+  sendJson(res, status, result)
+  return true
+}
+
+function pathSegments(path: string): string[] {
+  return path.split('/').filter(Boolean)
+}
+
+function routeMatches(pattern: string[], incoming: string[]): boolean {
+  return pattern.length === incoming.length && pattern.every((segment, index) => segment.startsWith(':') || segment === incoming[index])
+}
+
+function staticSegments(route: RestRoute): number {
+  return route.segments.filter((segment) => !segment.startsWith(':')).length
+}
+
+function parseQueryValue(raw: string, kind: 'string' | 'number' | 'boolean'): string | number | boolean {
+  if (kind === 'number') {
+    const value = Number(raw)
+    if (!Number.isFinite(value)) throw new Error(`query value must be a number: ${raw}`)
+    return value
+  }
+  if (kind === 'boolean') {
+    if (raw === 'true') return true
+    if (raw === 'false') return false
+    throw new Error(`query value must be true|false: ${raw}`)
+  }
+  return raw
+}
+
 // worker 内单实例激活，模块态即插件态（L2 每 worker 一份全新模块注册表）
 let activeServer: Server | undefined
 
@@ -78,12 +178,18 @@ export const httpPlugin: LedgerPlugin = definePlugin({
   async activate(host) {
     const configuredPort = await host.config.get<number>('plugins.plugin-http.port')
     const port = Number(configuredPort ?? process.env['LEDGER_HTTP_PORT'] ?? DEFAULT_PORT)
+    const catalog = await host.dispatch({ command: 'commands.describe', context: { source: 'http' } })
+    if (!catalog.ok || !Array.isArray(catalog.data)) {
+      throw new Error(`cannot load command capability catalog`)
+    }
+    const restRoutes = compileRestRoutes(catalog.data as CommandDescriptor[])
     const server = createServer(async (req, res) => {
       try {
         if (req.method === 'GET' && (req.url === '/health' || req.url === '/api/health')) {
           sendJson(res, 200, { ok: true, plugin: 'plugin-http' })
           return
         }
+        if (await handleRestRoute(req, res, restRoutes, host)) return
         if (req.method === 'POST' && (req.url === '/rpc' || req.url === '/api/rpc')) {
           const raw = await readBody(req)
           let parsed: { command?: string; payload?: unknown; context?: { source?: string; recorder?: string } }

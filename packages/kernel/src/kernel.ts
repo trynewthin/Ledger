@@ -10,8 +10,10 @@ import { Registry } from './registry.js'
 import { ServiceRegistry } from './services.js'
 import {
   noopConfigProvider,
+  noopProjectInitializationProvider,
   noopStorageProvider,
   type ConfigProvider,
+  type ProjectInitializationProvider,
   type StorageProvider,
 } from './core-services.js'
 
@@ -22,6 +24,8 @@ export interface KernelConfig {
   hostControl?: HostControlAPI
   configProvider?: ConfigProvider
   storageProvider?: StorageProvider
+  initializationProvider?: ProjectInitializationProvider
+  projectRoot?: string
 }
 
 export interface KernelOptions {
@@ -39,6 +43,7 @@ export interface Kernel {
   pluginHost: PluginHost
   config: ConfigProvider
   storage: StorageProvider
+  initialization: ProjectInitializationProvider
   loadPlugins(plugins: LedgerPlugin[]): Promise<void>
   shutdown(): Promise<void>
 }
@@ -53,18 +58,39 @@ export function createKernel(opts: KernelOptions): Kernel {
   const services = new ServiceRegistry(log)
   const configProvider = config.configProvider ?? noopConfigProvider
   const storageProvider = config.storageProvider ?? noopStorageProvider
+  const initializationProvider = config.initializationProvider ?? noopProjectInitializationProvider
   const ledger = new LedgerService(opts.repo, registry, events, log)
   const dispatcher = new Dispatcher(log)
   const pluginHost = new PluginHost(
-    { registry, events, ledger, services, config: configProvider, storage: storageProvider, dispatcher, log },
+    {
+      registry,
+      events,
+      ledger,
+      services,
+      config: configProvider,
+      storage: storageProvider,
+      initialization: initializationProvider,
+      dispatcher,
+      log,
+    },
     {
       coreMaintainedPlugins: config.coreMaintainedPlugins ?? DEFAULT_CORE_MAINTAINED,
       dataDir: config.dataDir ?? '.',
+      projectRoot: config.projectRoot ?? initializationProvider.projectRoot ?? '.',
       pluginsAdmin: config.pluginsAdmin,
       hostControl: config.hostControl,
     },
   )
-  registerCoreCommands({ dispatcher, ledger, registry, pluginHost, services, admin: config.pluginsAdmin, hostControl: config.hostControl })
+  registerCoreCommands({
+    dispatcher,
+    ledger,
+    registry,
+    pluginHost,
+    services,
+    storage: storageProvider,
+    admin: config.pluginsAdmin,
+    hostControl: config.hostControl,
+  })
   return {
     events,
     registry,
@@ -74,6 +100,7 @@ export function createKernel(opts: KernelOptions): Kernel {
     pluginHost,
     config: configProvider,
     storage: storageProvider,
+    initialization: initializationProvider,
     loadPlugins: (plugins) => pluginHost.loadAll(plugins),
     shutdown: async () => {
       for (const info of pluginHost.list()) {

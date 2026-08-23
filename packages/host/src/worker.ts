@@ -16,7 +16,7 @@ interface Pending {
 async function main(): Promise<void> {
   const port = parentPort
   if (!port) throw new Error('worker bootstrap requires worker_threads')
-  const { pluginDir, dataDir } = workerData as { pluginDir: string; dataDir: string }
+  const { pluginDir, dataDir, projectRoot } = workerData as { pluginDir: string; dataDir: string; projectRoot?: string }
 
   const pending = new Map<number, Pending>()
   let nextCallId = 1
@@ -77,6 +77,11 @@ async function main(): Promise<void> {
         set.add(handler as (next: unknown, previous: unknown) => void)
         if (first) void callMain('config', '__subscribe', [path])
       },
+    },
+    // 项目初始化由冷引导的 L1 插件扩展；L2 worker 不持有可序列化的初始化回调。
+    initialization: {
+      projectRoot: projectRoot ?? dataDir,
+      register: () => { throw new Error('project initialization is not available in worker plugins') },
     },
     storage: proxyApi('storage'),
     dispatch: ((req: Parameters<HostAPI['dispatch']>[0]) =>

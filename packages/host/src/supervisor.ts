@@ -43,6 +43,7 @@ export class WorkerSupervisor {
     private getKernel: () => Kernel,
     private dataDir: string,
     private log: Logger = console,
+    private projectRoot: string = dataDir,
   ) {}
 
   states(): PluginInfo[] {
@@ -66,7 +67,12 @@ export class WorkerSupervisor {
   private async spawn(name: string, dir: string, restarts: number, opts?: { terminateAfterActivate?: boolean }): Promise<void> {
     const workerUrl = resolveWorkerUrl()
     const worker = new Worker(workerUrl, {
-      workerData: { pluginDir: dir, dataDir: this.dataDir, terminateAfterActivate: opts?.terminateAfterActivate ?? false },
+      workerData: {
+        pluginDir: dir,
+        dataDir: this.dataDir,
+        projectRoot: this.projectRoot,
+        terminateAfterActivate: opts?.terminateAfterActivate ?? false,
+      },
     })
     const rec: WorkerRecord = {
       name,
@@ -268,6 +274,10 @@ export class WorkerSupervisor {
         if (method === 'exportAll') return kernel.storage.exportAll(args[0] as never)
         if (method === 'inspectImport') return kernel.storage.inspectImport(String(args[0]))
         if (method === 'importAll') return kernel.storage.importAll(String(args[0]), args[1] as never)
+        if (method === 'createSnapshot') return kernel.storage.createSnapshot()
+        if (method === 'listSnapshots') return kernel.storage.listSnapshots()
+        if (method === 'deleteSnapshot') return kernel.storage.deleteSnapshot(String(args[0]))
+        if (method === 'switchSnapshot') return kernel.storage.switchSnapshot(String(args[0]))
         throw new AppError('NOT_SUPPORTED', `storage.${method} is not available over worker bridge`)
       }
       case 'log': {
