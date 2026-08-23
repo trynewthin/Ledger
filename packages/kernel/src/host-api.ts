@@ -13,12 +13,16 @@ import { Registry } from './registry.js'
 import { ServiceRegistry } from './services.js'
 import { Dispatcher } from './dispatcher.js'
 import type { Logger } from '@ledger/plugin-contract'
+import type { ConfigValue, StorageValue } from '@ledger/plugin-contract'
+import type { ConfigProvider, StorageProvider } from './core-services.js'
 
 export interface HostApiDeps {
   registry: Registry
   events: EventBus
   ledger: LedgerService
   services: ServiceRegistry
+  config: ConfigProvider
+  storage: StorageProvider
   dispatcher: Dispatcher
   log: Logger
   pluginsAdmin?: PluginAdminAPI
@@ -28,6 +32,7 @@ export interface HostApiDeps {
 export interface HostApiContext {
   pluginName: string
   dataDir: string
+  configReads?: string[]
 }
 
 function ctxFor(name: string, ctx?: Partial<CallContext>): CallContext {
@@ -39,7 +44,13 @@ function ctxFor(name: string, ctx?: Partial<CallContext>): CallContext {
  * 托管项（注册表项/事件订阅/服务）按插件名打标，随 deactivate 自动反注册。
  */
 export function createPluginHostApi(deps: HostApiDeps, ctx: HostApiContext, isAdmin: boolean): HostAPI | AdminHostAPI {
-  const { registry, events, ledger, services } = deps
+  const { registry, events, ledger, services, config, storage } = deps
+  const assertConfigRead = (path: string): void => {
+    const reads = ctx.configReads ?? []
+    if (!reads.some((declared) => path === declared || path.startsWith(`${declared}.`))) {
+      throw new Error(`plugin ${ctx.pluginName} did not declare config read: ${path}`)
+    }
+  }
   const log: Logger = {
     debug: (m, ...a) => deps.log.debug(`[${ctx.pluginName}] ${m}`, ...a),
     info: (m, ...a) => deps.log.info(`[${ctx.pluginName}] ${m}`, ...a),
@@ -78,6 +89,38 @@ export function createPluginHostApi(deps: HostApiDeps, ctx: HostApiContext, isAd
       provide: (name, service) => services.provide(name, service, ctx.pluginName),
       get: (name) => services.get(name),
       onAvailable: (name, cb) => services.onAvailable(name, cb, ctx.pluginName),
+    },
+    config: {
+      get: async <T extends ConfigValue = ConfigValue>(path: string) => {
+        assertConfigRead(path)
+        return config.get<T>(path)
+      },
+      require: async <T extends ConfigValue = ConfigValue>(path: string) => {
+        assertConfigRead(path)
+        return config.require<T>(path)
+      },
+      snapshot: async () => {
+        const out: Record<string, ConfigValue> = {}
+        for (const path of ctx.configReads ?? []) {
+          const value = config.get(path)
+          if (value !== undefined) out[path] = value
+        }
+        return Object.freeze(out)
+      },
+      status: async () => config.status(),
+      subscribe: (path, handler) => {
+        assertConfigRead(path)
+        config.subscribe(path, handler, ctx.pluginName)
+      },
+    },
+    storage: {
+      get: async <T extends StorageValue = StorageValue>(key: string) => storage.get<T>(ctx.pluginName, key),
+      set: async (key, value) => storage.set(ctx.pluginName, key, value),
+      delete: async (key) => storage.delete(ctx.pluginName, key),
+      list: async <T extends StorageValue = StorageValue>(prefix?: string) => storage.list<T>(ctx.pluginName, prefix),
+      exportAll: (options) => storage.exportAll(options),
+      inspectImport: (source) => storage.inspectImport(source),
+      importAll: (source, options) => storage.importAll(source, options),
     },
     dispatch: async (req: RpcRequest): Promise<RpcResult> =>
       deps.dispatcher.dispatch({

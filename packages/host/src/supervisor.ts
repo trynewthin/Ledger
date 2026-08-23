@@ -25,6 +25,7 @@ interface WorkerRecord {
   restarts: number
   lastStartAt: number
   intentionalStop: boolean
+  configReads: string[]
 }
 
 const MAX_RESTARTS = 5
@@ -76,6 +77,7 @@ export class WorkerSupervisor {
       restarts,
       lastStartAt: Date.now(),
       intentionalStop: false,
+      configReads: [],
     }
     this.records.set(name, rec)
 
@@ -93,6 +95,7 @@ export class WorkerSupervisor {
     worker.on('message', (msg: Record<string, unknown>) => {
       const t = msg['t'] as string
       if (t === 'bootstrapped') {
+        rec.configReads = ((msg['manifest'] as { config?: { reads?: string[] } })?.config?.reads ?? [])
         worker.postMessage({ t: 'activate' })
       } else if (t === 'ready') {
         rec.version = (msg['manifest'] as { version?: string })?.version ?? '?'
@@ -130,6 +133,7 @@ export class WorkerSupervisor {
     })
 
     worker.on('exit', (code) => {
+      this.getKernel().config.unsubscribeOwner(name)
       if (rec.intentionalStop) {
         this.records.delete(name)
         return
@@ -218,6 +222,54 @@ export class WorkerSupervisor {
         }
         throw new AppError('NOT_SUPPORTED', `events.${method} is not available over worker bridge`)
       }
+      case 'config': {
+        const assertRead = (path: string): void => {
+          if (!rec.configReads.some((declared) => path === declared || path.startsWith(`${declared}.`))) {
+            throw new AppError('NOT_SUPPORTED', `plugin ${rec.name} did not declare config read: ${path}`)
+          }
+        }
+        if (method === 'get' || method === 'require') {
+          const path = String(args[0])
+          assertRead(path)
+          return method === 'get' ? kernel.config.get(path) : kernel.config.require(path)
+        }
+        if (method === 'snapshot') {
+          return Object.fromEntries(
+            rec.configReads.flatMap((path) => {
+              const value = kernel.config.get(path)
+              return value === undefined ? [] : [[path, value]]
+            }),
+          )
+        }
+        if (method === 'status') return kernel.config.status()
+        if (method === '__subscribe') {
+          const path = String(args[0])
+          assertRead(path)
+          kernel.config.subscribe(
+            path,
+            (next, previous) => {
+              try {
+                rec.worker.postMessage({ t: 'config', path, next, previous })
+              } catch {
+                // worker 已退出时丢弃，owner 清理会移除订阅。
+              }
+            },
+            rec.name,
+          )
+          return undefined
+        }
+        throw new AppError('NOT_SUPPORTED', `config.${method} is not available over worker bridge`)
+      }
+      case 'storage': {
+        if (method === 'get') return kernel.storage.get(rec.name, String(args[0]))
+        if (method === 'set') return kernel.storage.set(rec.name, String(args[0]), args[1] as never)
+        if (method === 'delete') return kernel.storage.delete(rec.name, String(args[0]))
+        if (method === 'list') return kernel.storage.list(rec.name, args[0] === undefined ? undefined : String(args[0]))
+        if (method === 'exportAll') return kernel.storage.exportAll(args[0] as never)
+        if (method === 'inspectImport') return kernel.storage.inspectImport(String(args[0]))
+        if (method === 'importAll') return kernel.storage.importAll(String(args[0]), args[1] as never)
+        throw new AppError('NOT_SUPPORTED', `storage.${method} is not available over worker bridge`)
+      }
       case 'log': {
         const level = method as keyof Logger
         this.log[level]?.(`[${rec.name}]`, String(args[0]), ...(args.slice(1) as unknown[]))
@@ -246,6 +298,7 @@ export class WorkerSupervisor {
       }),
     ])
     await rec.worker.terminate()
+    this.getKernel().config.unsubscribeOwner(name)
     this.records.delete(name)
   }
 

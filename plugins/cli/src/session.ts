@@ -1,5 +1,6 @@
 import type { DispatchRequest, DispatchResult, Kernel } from '@ledger/kernel'
 import { assembleColdKernel } from './cold-boot.js'
+import type { ConfigProvider } from '@ledger/kernel'
 import { hostSocketPath } from './paths.js'
 import { tryRpcConnect, type RpcClient } from './rpc.js'
 
@@ -20,6 +21,7 @@ export interface Session {
 export async function openSession(opts: {
   home: string
   recorder: string
+  configProvider?: ConfigProvider
 }): Promise<Session> {
   const context = { source: 'cli', recorder: opts.recorder }
   const rpc: RpcClient | null = await tryRpcConnect(hostSocketPath(opts.home))
@@ -30,7 +32,7 @@ export async function openSession(opts: {
       close: async () => rpc.close(),
     }
   }
-  const boot = await assembleColdKernel(opts.home)
+  const boot = await assembleColdKernel(opts.home, opts.configProvider)
   return {
     mode: 'cold',
     kernel: boot.kernel,
@@ -40,7 +42,7 @@ export async function openSession(opts: {
 }
 
 export async function withSession<T>(
-  opts: { home: string; recorder: string },
+  opts: { home: string; recorder: string; configProvider?: ConfigProvider },
   fn: (session: Session) => Promise<T>,
 ): Promise<T> {
   const session = await openSession(opts)

@@ -13,6 +13,17 @@
 
 export type Direction = 'income' | 'expense'
 
+/** 可跨进程安全复制的配置/轻量存储值。 */
+export type ConfigValue = null | boolean | number | string | ConfigValue[] | { [key: string]: ConfigValue }
+
+export interface ConfigStatus {
+  filePath: string
+  loadedAt: number
+  lastError?: string
+  restartRequired: boolean
+  restartRequiredPaths: string[]
+}
+
 export interface EntryDTO {
   id: string
   bookId: string
@@ -276,6 +287,60 @@ export interface ServicesAPI {
   onAvailable(name: string, cb: () => void): void
 }
 
+/**
+ * 插件可见的只读配置面。manifest.config.reads 是声明与诊断契约；
+ * 配置核心本身不解释任何配置项的业务含义。
+ */
+export interface ConfigAPI {
+  get<T extends ConfigValue = ConfigValue>(path: string): Promise<T | undefined>
+  require<T extends ConfigValue = ConfigValue>(path: string): Promise<T>
+  snapshot(): Promise<Readonly<Record<string, ConfigValue>>>
+  status(): Promise<ConfigStatus>
+  subscribe(path: string, handler: (next: ConfigValue | undefined, previous: ConfigValue | undefined) => void): void
+}
+
+export type StorageValue = ConfigValue
+
+export interface StorageEntry<T extends StorageValue = StorageValue> {
+  key: string
+  value: T
+}
+
+export interface StorageArtifact {
+  path: string
+  format: 'sqlite-native'
+  formatVersion: number
+  createdAt: number
+  sizeBytes: number
+  checksum: string
+}
+
+export interface StorageImportPlan {
+  source: string
+  format: 'sqlite-native'
+  formatVersion: number
+  compatible: boolean
+  tables: string[]
+  warnings: string[]
+}
+
+export interface StorageImportResult {
+  importedAt: number
+  tables: string[]
+  safetyBackup?: string
+}
+
+/** owner 已由宿主绑定，插件无法越过自己的轻量存储命名空间。 */
+export interface StorageAPI {
+  get<T extends StorageValue = StorageValue>(key: string): Promise<T | undefined>
+  set<T extends StorageValue = StorageValue>(key: string, value: T): Promise<void>
+  delete(key: string): Promise<void>
+  list<T extends StorageValue = StorageValue>(prefix?: string): Promise<StorageEntry<T>[]>
+  exportAll(options: { destination: string }): Promise<StorageArtifact>
+  inspectImport(source: string): Promise<StorageImportPlan>
+  importAll(source: string, options?: { createSafetyBackup?: boolean }): Promise<StorageImportResult>
+}
+
 // ---------------------------------------------------------------------------
 // 服务契约（服务名即契约；此处固化消费方依赖的结构子集）
 // ---------------------------------------------------------------------------
@@ -371,6 +436,8 @@ export interface HostAPI {
   events: EventBusAPI
   ledger: LedgerAPI
   services: ServicesAPI
+  config: ConfigAPI
+  storage: StorageAPI
   /** 统一调用协议入口（入口插件转发外部调用的正道；context 缺省以插件身份注入） */
   dispatch(req: RpcRequest): Promise<RpcResult>
   log: Logger
@@ -430,6 +497,8 @@ export interface PluginManifest {
   capabilities?: ('admin')[]
   provides?: string[]
   consumes?: string[]
+  /** 声明插件读取的配置路径；用于文档、诊断和未来兼容性检查。 */
+  config?: { reads: string[] }
   contributes?: {
     types?: TypeContribution[]
     fields?: FieldContribution[]

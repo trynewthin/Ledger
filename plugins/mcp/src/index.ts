@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline'
-import type { Kernel } from '@ledger/kernel'
+import type { ConfigProvider, Kernel } from '@ledger/kernel'
 import { assembleColdKernel } from '@ledger/plugin-cli'
 import { buildTools, type McpTool } from './tools.js'
 
@@ -29,8 +29,8 @@ function replyError(id: number | string | null, code: number, message: string): 
   write({ jsonrpc: '2.0', id, error: { code, message } })
 }
 
-export async function runMcpServer(opts: { home: string }): Promise<void> {
-  const boot = await assembleColdKernel(opts.home)
+export async function runMcpServer(opts: { home: string; configProvider?: ConfigProvider }): Promise<void> {
+  const boot = await assembleColdKernel(opts.home, opts.configProvider)
   const kernel: Kernel = boot.kernel
 
   // 同源原则：tool schema 每次即时从注册表构建（注册新字段立即反映）
@@ -109,4 +109,5 @@ export async function runMcpServer(opts: { home: string }): Promise<void> {
   })
   await new Promise<void>((resolve) => rl.on('close', () => resolve()))
   boot.close()
+  await opts.configProvider?.close?.()
 }

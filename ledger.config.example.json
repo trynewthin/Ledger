@@ -1,0 +1,13 @@
+{
+  "storage": {
+    "dataDir": "./.ledger-data"
+  },
+  "plugins": {
+    "plugin-http": {
+      "port": 7400
+    },
+    "plugin-webui": {
+      "port": 7420
+    }
+  }
+}

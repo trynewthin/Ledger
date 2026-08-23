@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createKernel, type Kernel } from '@ledger/kernel'
-import { migrate, openDatabase, SqliteEntryRepository, SqliteMetadataStore } from '@ledger/storage-sqlite'
+import { migrate, openDatabase, SqliteEntryRepository, SqliteMetadataStore, SqliteStorageService } from '@ledger/storage-sqlite'
 import { snapshotPlugin } from './index.js'
 
 /** 与入口装配同构：sqlite 内核 + 'db' 服务 */
@@ -11,10 +11,11 @@ function bootKernel(): { kernel: Kernel; home: string } {
   const home = mkdtempSync(join(tmpdir(), 'ledger-snap-'))
   const db = openDatabase(join(home, 'ledger.db'))
   migrate(db)
+  const storage = new SqliteStorageService(db, join(home, 'ledger.db'))
   const kernel = createKernel({
     repo: new SqliteEntryRepository(db),
     metaStore: new SqliteMetadataStore(db),
-    config: { dataDir: home },
+    config: { dataDir: home, storageProvider: storage },
   })
   kernel.services.provide('db', db, 'entry')
   return { kernel, home }

@@ -8,12 +8,20 @@ import { createLogger } from './logger.js'
 import { PluginHost } from './plugin-host.js'
 import { Registry } from './registry.js'
 import { ServiceRegistry } from './services.js'
+import {
+  noopConfigProvider,
+  noopStorageProvider,
+  type ConfigProvider,
+  type StorageProvider,
+} from './core-services.js'
 
 export interface KernelConfig {
   coreMaintainedPlugins?: string[]
   dataDir?: string
   pluginsAdmin?: PluginAdminAPI
   hostControl?: HostControlAPI
+  configProvider?: ConfigProvider
+  storageProvider?: StorageProvider
 }
 
 export interface KernelOptions {
@@ -29,6 +37,8 @@ export interface Kernel {
   ledger: LedgerService
   dispatcher: Dispatcher
   pluginHost: PluginHost
+  config: ConfigProvider
+  storage: StorageProvider
   loadPlugins(plugins: LedgerPlugin[]): Promise<void>
   shutdown(): Promise<void>
 }
@@ -41,10 +51,12 @@ export function createKernel(opts: KernelOptions): Kernel {
   const registry = new Registry(opts.metaStore, log)
   registry.load()
   const services = new ServiceRegistry(log)
+  const configProvider = config.configProvider ?? noopConfigProvider
+  const storageProvider = config.storageProvider ?? noopStorageProvider
   const ledger = new LedgerService(opts.repo, registry, events, log)
   const dispatcher = new Dispatcher(log)
   const pluginHost = new PluginHost(
-    { registry, events, ledger, services, dispatcher, log },
+    { registry, events, ledger, services, config: configProvider, storage: storageProvider, dispatcher, log },
     {
       coreMaintainedPlugins: config.coreMaintainedPlugins ?? DEFAULT_CORE_MAINTAINED,
       dataDir: config.dataDir ?? '.',
@@ -60,6 +72,8 @@ export function createKernel(opts: KernelOptions): Kernel {
     ledger,
     dispatcher,
     pluginHost,
+    config: configProvider,
+    storage: storageProvider,
     loadPlugins: (plugins) => pluginHost.loadAll(plugins),
     shutdown: async () => {
       for (const info of pluginHost.list()) {

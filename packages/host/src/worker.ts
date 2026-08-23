@@ -28,6 +28,7 @@ async function main(): Promise<void> {
     })
 
   const eventHandlers = new Map<string, Set<(payload: unknown) => void>>()
+  const configHandlers = new Map<string, Set<(next: unknown, previous: unknown) => void>>()
 
   const plugin = await loadPluginFromDir(pluginDir)
 
@@ -61,6 +62,23 @@ async function main(): Promise<void> {
       get: () => undefined,
       onAvailable: () => {},
     },
+    config: {
+      get: (path) => callMain('config', 'get', [path]),
+      require: (path) => callMain('config', 'require', [path]),
+      snapshot: () => callMain('config', 'snapshot', []),
+      status: () => callMain('config', 'status', []),
+      subscribe: (path, handler) => {
+        let set = configHandlers.get(path)
+        const first = !set
+        if (!set) {
+          set = new Set()
+          configHandlers.set(path, set)
+        }
+        set.add(handler as (next: unknown, previous: unknown) => void)
+        if (first) void callMain('config', '__subscribe', [path])
+      },
+    },
+    storage: proxyApi('storage'),
     dispatch: ((req: Parameters<HostAPI['dispatch']>[0]) =>
       callMain('dispatch', 'invoke', [req])) as HostAPI['dispatch'],
     log: {
@@ -88,6 +106,15 @@ async function main(): Promise<void> {
           fn(msg['payload'])
         } catch {
           // 处理器错误不影响其他
+        }
+      }
+    } else if (t === 'config') {
+      const path = msg['path'] as string
+      for (const fn of configHandlers.get(path) ?? []) {
+        try {
+          fn(msg['next'], msg['previous'])
+        } catch {
+          // 配置消费者错误不影响 worker 内其他订阅者。
         }
       }
     } else if (t === 'activate') {
@@ -118,7 +145,7 @@ async function main(): Promise<void> {
     setTimeout(() => process.exit(1), 30)
   }
 
-  port.postMessage({ t: 'bootstrapped', name: plugin.manifest.name })
+  port.postMessage({ t: 'bootstrapped', name: plugin.manifest.name, manifest: plugin.manifest })
 }
 
 void main()

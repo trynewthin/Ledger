@@ -6,3 +6,5 @@ coverage/
 *.log
 .tmp/
 tmp/
+ledger.config.json
+.ledger-data/

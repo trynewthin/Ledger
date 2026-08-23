@@ -45,6 +45,8 @@ export default definePlugin({
 - `events`：订阅领域事件；订阅随 deactivate 自动清理。
 - `ledger`：直接调用共享账务用例。
 - `services`：提供或消费进程内服务。
+- `config`：读取 manifest 声明的配置路径并订阅热更新。
+- `storage`：访问插件自己的轻量数据命名空间及整体导入导出能力。
 - `dispatch`：转发统一命令，入口插件应优先使用它。
 - `log`：记录带插件上下文的日志。
 - `meta`：插件名和运行数据目录。
@@ -78,6 +80,28 @@ plugins/example/
 模块代码中的 `manifest` 是运行时权威，必须包含 name、version 和 isolation。两处 name/isolation 应保持一致。
 
 `package.json` 至少提供 build、test 和 typecheck，并只把 `@ledger/plugin-contract` 作为正式工作区依赖。测试所需的 kernel/domain 可以放入 devDependencies。
+
+需要配置时，在运行时 manifest 声明读取路径：
+
+```ts
+manifest: {
+  name: 'plugin-example',
+  version: '0.1.0',
+  isolation: 'inprocess',
+  config: { reads: ['plugins.plugin-example'] },
+}
+```
+
+读取和订阅：
+
+```ts
+const port = await host.config.require<number>('plugins.plugin-example.port')
+host.config.subscribe('plugins.plugin-example.port', (next, previous) => {
+  // 插件自行决定如何重建受该配置影响的资源。
+})
+```
+
+未声明的路径会被宿主拒绝。L2 worker 使用同一 API，配置变化由 supervisor 桥接。
 
 ## 4. 构建后端插件
 
@@ -186,7 +210,15 @@ services 没有版本协商，服务名即契约。破坏性变化必须改变�
 
 ## 7. 使用数据库服务
 
-需要插件自有表的 L1 插件按以下方式工作：
+简单、无业务结构的插件状态优先使用 owner 隔离的 StorageAPI：
+
+```ts
+await host.storage.set('cursor', { lastId: '01...' })
+const cursor = await host.storage.get<{ lastId: string }>('cursor')
+const cached = await host.storage.list('cache/')
+```
+
+复杂结构化数据仍应由插件 Repository 管理。兼容期需要插件自有 SQL 表的 L1 插件按以下方式工作：
 
 1. 从 `host.services.get<SqliteDb>('db')` 获取连接。
 2. 缺失时明确降级或激活失败，不自行解析仓库内数据库模块。
@@ -195,6 +227,8 @@ services 没有版本协商，服务名即契约。破坏性变化必须改变�
 5. 对 schema 演进建立插件自己的迁移纪律。
 
 只有 Entry、revision、type_defs 和 field_defs 等内核数据应由 storage-sqlite 管理。插件表不能反向成为内核统计成立的前提。
+
+整体快照使用 `host.storage.exportAll()`、`inspectImport()` 和 `importAll()`。这些接口只处理完整存储数据；账本级合并等业务规则应留在上层插件。
 
 ## 8. 订阅事件
 
@@ -378,6 +412,7 @@ pnpm typecheck
 8. activate/deactivate/reload 有测试。
 9. 卸载不破坏历史数据。
 10. 包级和全量验证全部通过。
+11. 关键生命周期、热加载、事务与回退代码包含说明设计原因的注释。
 
 现有参考实现：
 

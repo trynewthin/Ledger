@@ -4,24 +4,25 @@ import type { FieldDefDTO, TypeDefDTO } from '@ledger/plugin-contract'
 import { runHostMain } from '@ledger/host'
 import { buildProgram, type CliContext } from './commands.js'
 import { toCliError } from './errors.js'
-import { resolveLedgerHome } from './paths.js'
 import { unwrap } from './result.js'
 import { withSession } from './session.js'
+import { openRuntimeConfig } from '@ledger/kernel'
 
 /**
  * CLI 入口：混合自动模式。
  * 宿主在 → socket RPC；不在 → 冷引导直调（同一内核，同一调用协议）。
  */
 export async function runCli(argv: string[]): Promise<number> {
-  const home = resolveLedgerHome()
+  const config = await openRuntimeConfig({ watch: argv[0] === 'host' })
+  const home = config.require<string>('storage.dataDir')
   // ledger host：常驻宿主前台运行，不经会话（自身就是宿主）
   if (argv[0] === 'host') {
-    return runHostMain(home)
+    return runHostMain(home, config)
   }
   const recorder = process.env['LEDGER_RECORDER'] ?? 'me'
   const json = argv.includes('--json')
   try {
-    return await withSession({ home, recorder }, async (session) => {
+    return await withSession({ home, recorder, configProvider: config }, async (session) => {
       const [types, fields] = await Promise.all([
         unwrap<TypeDefDTO[]>(await session.call('type.list', {})),
         unwrap<FieldDefDTO[]>(await session.call('field.list', {})),
@@ -42,6 +43,8 @@ export async function runCli(argv: string[]): Promise<number> {
     console.error(`✗ [${ce.code}] ${ce.message}`)
     if (ce.details !== undefined) console.error(JSON.stringify(ce.details))
     return 1
+  } finally {
+    await config.close()
   }
 }
 

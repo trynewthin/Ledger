@@ -131,7 +131,11 @@ export class PluginHost {
 
   private async activate(plugin: LedgerPlugin): Promise<void> {
     const name = plugin.manifest.name
-    const api = createPluginHostApi(this.deps, { pluginName: name, dataDir: this.config.dataDir }, this.isAdmin(name))
+    const api = createPluginHostApi(
+      this.deps,
+      { pluginName: name, dataDir: this.config.dataDir, configReads: plugin.manifest.config?.reads },
+      this.isAdmin(name),
+    )
     try {
       await plugin.activate(api as HostAPI | AdminHostAPI)
     } catch (e) {
@@ -163,6 +167,7 @@ export class PluginHost {
       this.deps.registry.markOwnerUnavailable(name)
       this.deps.events.unsubscribeOwner(name)
       this.deps.services.revokeOwner(name)
+      this.deps.config.unsubscribeOwner(name)
       this.deps.log.warn(`plugin ${name} deactivate threw; its registrations marked unavailable`, e)
     }
   }
@@ -172,6 +177,7 @@ export class PluginHost {
     this.deps.registry.unregisterByOwner(name)
     this.deps.events.unsubscribeOwner(name)
     this.deps.services.revokeOwner(name)
+    this.deps.config.unsubscribeOwner(name)
   }
 
   list(): PluginInfo[] {

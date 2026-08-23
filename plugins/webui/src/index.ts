@@ -62,9 +62,11 @@ export const webuiPlugin: LedgerPlugin = definePlugin({
     name: 'plugin-webui',
     version: '0.1.0',
     isolation: 'worker',
+    config: { reads: ['plugins.plugin-webui'] },
   },
   async activate(host) {
-    const port = Number(process.env['LEDGER_WEBUI_PORT'] ?? DEFAULT_PORT)
+    const configuredPort = await host.config.get<number>('plugins.plugin-webui.port')
+    const port = Number(configuredPort ?? process.env['LEDGER_WEBUI_PORT'] ?? DEFAULT_PORT)
     // shell 产物与本插件同目录（安装时随插件目录复制）
     const shellDir = process.env['LEDGER_WEBUI_SHELL_DIR'] ?? join(host.meta.dataDir, 'plugins', 'plugin-webui', 'shell')
     const uiPluginsDir = uiPluginsDirOf(host.meta.dataDir)

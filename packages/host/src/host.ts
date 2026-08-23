@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
-import { openDatabase, migrate, SqliteEntryRepository, SqliteMetadataStore } from '@ledger/storage-sqlite'
-import { bootstrapInstalledPlugins, createKernel, DEFAULT_CORE_MAINTAINED, type Kernel } from '@ledger/kernel'
+import { openDatabase, migrate, SqliteEntryRepository, SqliteMetadataStore, SqliteStorageService } from '@ledger/storage-sqlite'
+import { bootstrapInstalledPlugins, createKernel, DEFAULT_CORE_MAINTAINED, type ConfigProvider, type Kernel } from '@ledger/kernel'
 import type { HostControlAPI, PluginAdminAPI } from '@ledger/plugin-contract'
 import { createAdminFaces } from './admin.js'
 import { dbPath, hostSocketPath } from './paths.js'
@@ -22,11 +22,12 @@ export interface HostHandle {
  * 常驻宿主：组装内核 + L1 进程内插件 + L2 worker 插件 + 本地 socket RPC。
  * CLI/MCP 冷引导用同一内核，只是组装方式不同（双形态，同一内核）。
  */
-export async function startHost(opts: { home: string; withSocket?: boolean }): Promise<HostHandle> {
+export async function startHost(opts: { home: string; withSocket?: boolean; configProvider?: ConfigProvider }): Promise<HostHandle> {
   const home = opts.home
   await mkdir(home, { recursive: true })
   const db = openDatabase(dbPath(home))
   migrate(db)
+  const storage = new SqliteStorageService(db, dbPath(home))
 
   let kernelRef: Kernel
   let supervisorRef: WorkerSupervisor
@@ -39,7 +40,8 @@ export async function startHost(opts: { home: string; withSocket?: boolean }): P
       socketServer?.close().catch(() => undefined)
       await supervisorRef.shutdownAll()
       await kernelRef.shutdown()
-      db.close()
+      storage.close()
+      await opts.configProvider?.close?.()
       shutdownResolve()
     },
   }
@@ -49,7 +51,14 @@ export async function startHost(opts: { home: string; withSocket?: boolean }): P
   const kernel = createKernel({
     repo: new SqliteEntryRepository(db),
     metaStore: new SqliteMetadataStore(db),
-    config: { dataDir: home, coreMaintainedPlugins: [...DEFAULT_CORE_MAINTAINED], pluginsAdmin: plugins, hostControl: host },
+    config: {
+      dataDir: home,
+      coreMaintainedPlugins: [...DEFAULT_CORE_MAINTAINED],
+      pluginsAdmin: plugins,
+      hostControl: host,
+      configProvider: opts.configProvider,
+      storageProvider: storage,
+    },
   })
   kernelRef = kernel
   // 入口共享自己的 db 连接：L1 插件（user/snapshot 等）自带表经 'db' 服务读写，内核无感知
@@ -91,8 +100,8 @@ export async function startHost(opts: { home: string; withSocket?: boolean }): P
 }
 
 /** 宿主前台运行入口（ledger host / ledger-host bin） */
-export async function runHostMain(home: string): Promise<number> {
-  const handle = await startHost({ home })
+export async function runHostMain(home: string, configProvider?: ConfigProvider): Promise<number> {
+  const handle = await startHost({ home, configProvider })
   console.log(`[host] ready  pid=${process.pid}  socket=${handle.socketPath}`)
   const stop = (signal: string) => {
     console.log(`[host] ${signal} received, shutting down`)

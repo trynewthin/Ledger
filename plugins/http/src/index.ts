@@ -73,9 +73,11 @@ export const httpPlugin: LedgerPlugin = definePlugin({
     name: 'plugin-http',
     version: '0.1.0',
     isolation: 'worker',
+    config: { reads: ['plugins.plugin-http'] },
   },
   async activate(host) {
-    const port = Number(process.env['LEDGER_HTTP_PORT'] ?? DEFAULT_PORT)
+    const configuredPort = await host.config.get<number>('plugins.plugin-http.port')
+    const port = Number(configuredPort ?? process.env['LEDGER_HTTP_PORT'] ?? DEFAULT_PORT)
     const server = createServer(async (req, res) => {
       try {
         if (req.method === 'GET' && (req.url === '/health' || req.url === '/api/health')) {

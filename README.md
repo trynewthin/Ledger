@@ -11,31 +11,34 @@
 
 ## 状态
 
-**实施完成（2026-08-23）**：M0–M6 全部里程碑完成并验收提交，84 个测试全绿、typecheck 全绿。M6 交付 plugin-user（身份目录 + 'db'/'user' 服务契约）、core-types 完全体（类型层级 + 图标 + 付款平台字段）、plugin-dataviews（概览页数据视图 UI 插件 + stats.byRecorder）、plugin-snapshot（全库/账本级快照与回迁）。当前系统说明见 [项目概要](./docs/PROJECT_OVERVIEW.md)，历史里程碑见 [归档进度](./docs/archive/PROGRESS.md)。
+**当前状态（2026-08-23）**：M0–M6 产品范围已完成；现已增加 Config Core 与 Storage Core，统一提供仓库根配置、热加载、插件声明式读取、轻量命名空间存储和整体导入导出。当前系统说明见 [项目概要](./docs/PROJECT_OVERVIEW.md)，历史里程碑见 [归档进度](./docs/archive/PROGRESS.md)。
 
 ## 快速上手
 
 ```bash
 pnpm install && pnpm build
+cp ledger.config.example.json ledger.config.json
 
-# CLI 冷引导记账（类型/字段/身份/快照均为插件，按需安装）
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js add -d expense -a 12.50
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js plugin install plugins/core-types
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js add -d expense -a 12.50 -t food-coffee --payment-platform alipay
+# CLI 冷引导记账（storage.dataDir 来自仓库根 ledger.config.json）
+node plugins/cli/dist/cli.js add -d expense -a 12.50
+node plugins/cli/dist/cli.js plugin install plugins/core-types
+node plugins/cli/dist/cli.js add -d expense -a 12.50 -t food-coffee --payment-platform alipay
 
 # 身份与快照（plugin-user / plugin-snapshot）
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js plugin install plugins/user
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js user get
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js plugin install plugins/snapshot
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js snapshot create
+node plugins/cli/dist/cli.js plugin install plugins/user
+node plugins/cli/dist/cli.js user get
+node plugins/cli/dist/cli.js plugin install plugins/snapshot
+node plugins/cli/dist/cli.js snapshot create
 
 # 常驻宿主 + WebUI（安装 webui、core-views、dataviews 后访问 http://127.0.0.1:7420）
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js host
+node plugins/cli/dist/cli.js host
 # 另一终端：
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js plugin install plugins/webui
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js ui install plugins/webui-core-views/dist
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js ui install plugins/dataviews/dist
+node plugins/cli/dist/cli.js plugin install plugins/webui
+node plugins/cli/dist/cli.js ui install plugins/webui-core-views/dist
+node plugins/cli/dist/cli.js ui install plugins/dataviews/dist
 ```
+
+`ledger.config.json` 和默认的 `.ledger-data/` 均不参与提交；`LEDGER_HOME` 仍可作为测试或一次性运行覆盖。
 
 ## 核心理念
 

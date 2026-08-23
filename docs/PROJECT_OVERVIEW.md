@@ -37,8 +37,8 @@ Web UI ────┘         │                │
 ```text
 packages/
   domain/             Entry 聚合、金额与方向、事件、仓储端口、内存实现
-  kernel/             账务服务、Dispatcher、Registry、EventBus、插件宿主
-  storage-sqlite/     SQLite 仓储、元数据存储、迁移
+  kernel/             账务服务、Config Core、Dispatcher、Registry、EventBus、插件宿主
+  storage-sqlite/     Storage Core、SQLite 仓储、元数据存储、迁移、整体导入导出
   host/               常驻宿主、socket RPC、L2 worker supervisor
   plugin-contract/    后端插件 ABI 与服务契约
   webui-contract/     UI 插件 ABI
@@ -102,9 +102,13 @@ Web UI 内部还有独立的 UI 插件层。shell 只负责布局、路由和加
 
 ## 7. 数据与运行目录
 
-运行数据由 `LEDGER_HOME` 定位。主要内容包括 SQLite 数据库、已安装后端插件、UI 插件、插件配置和快照文件。生产仓储使用 `better-sqlite3`，启用 WAL，并通过 `schema_migrations` 逐版本事务迁移。
+仓库根目录的 `ledger.config.json` 是统一配置入口，样例见 `ledger.config.example.json`。配置文件不参与提交；相对路径以仓库根目录解析。Config Core 提供不可变快照、校验、订阅和文件热加载，无效更新会保留上一份有效配置。
 
-入口装配负责提供共享的 `db` 服务。需要 SQLite 的 L1 插件应消费该服务，不应把原生数据库驱动留作安装态运行依赖。
+`storage.dataDir` 定位运行数据目录，主要内容包括 SQLite 数据库、已安装后端插件、UI 插件、插件状态和快照。该启动级配置发生变化时会标记 `restartRequired`，重启后切换目录。`LEDGER_HOME` 仅保留为测试和一次性运行覆盖。
+
+Storage Core 管理共享 SQLite 连接、事务、组件迁移、插件命名空间 KV 和整体导入导出。领域 Repository 继续负责 Entry 等业务数据映射；Storage Core 不解释业务语义。
+
+现有 `db` 服务作为兼容通道继续提供给 user 和账本级 snapshot 逻辑，新插件应优先使用 `host.storage`。全库 snapshot 已委托 Storage Core 生成一致性备份并执行安全回迁。
 
 ## 8. 快速运行
 
@@ -113,15 +117,16 @@ Web UI 内部还有独立的 UI 插件层。shell 只负责布局、路由和加
 ```bash
 pnpm install
 pnpm build
+cp ledger.config.example.json ledger.config.json
 
 # 零插件冷引导记账
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js add -d expense -a 12.50
+node plugins/cli/dist/cli.js add -d expense -a 12.50
 
 # 安装基础类型插件
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js plugin install plugins/core-types
+node plugins/cli/dist/cli.js plugin install plugins/core-types
 
 # 启动常驻宿主
-LEDGER_HOME=/tmp/ledger node plugins/cli/dist/cli.js host
+node plugins/cli/dist/cli.js host
 ```
 
 Web UI 还需安装 `plugins/webui`，并安装 `webui-core-views/dist` 和可选的 `dataviews/dist` UI 插件；默认地址为 `http://127.0.0.1:7420`。
@@ -134,7 +139,7 @@ pnpm -r --no-bail test
 pnpm typecheck
 ```
 
-当前基线为 84 个测试。测试包含纯领域、SQLite 迁移、零插件门禁、插件生命周期、真实 socket/worker/HTTP、CLI 端到端、Web UI 网关、MCP、身份和快照恢复。
+测试覆盖纯领域、配置热加载、SQLite 迁移、整体导入导出、零插件门禁、插件生命周期、真实 socket/worker/HTTP、CLI 端到端、Web UI 网关、MCP、身份和快照恢复。
 
 修改现有能力前先阅读 [功能开发驾驭工程指南](./FEATURE_DEVELOPMENT_GUIDE.md)。
 

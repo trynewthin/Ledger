@@ -10,9 +10,9 @@ import {
 
 /**
  * plugin-snapshot — 快照与回迁（L1 + 服务提供者），单文件即备份单元。
- * - 全库：SQLite backup → <home>/snapshots/full-<ts>.db（完整可用副本）
+ * - 全库：委托 Storage Core 整体导出 → <home>/snapshots/full-<ts>.db
  * - 账本级：<bookId> 的 entries + revisions + 引用的 type/field 定义 → JSON
- * - 回迁：全库 = ATTACH + 事务整表替换（同连接内完成，无需重启宿主）；
+ * - 回迁：全库 = Storage Core 校验、安全备份与事务整表替换；
  *         账本级 = 按原 id upsert（revision 续写）
  * 表结构经 'db' 服务（入口装配提供）读写，内核无感知；restore 后由 kernel 侧重载注册表。
  */
@@ -48,15 +48,6 @@ function upsertRows(db: SqliteDb, table: string, rows: Row[], mode: 'replace' | 
   for (const r of rows) stmt.run(...cols.map((c) => r[c]))
 }
 
-function tableExists(db: SqliteDb, table: string): boolean {
-  // table 可带库名限定（如 snap.entries）——查对应库的 sqlite_master
-  const qualified = /^([a-zA-Z_]\w*)\.([a-zA-Z_]\w*)$/.exec(table)
-  const master = qualified ? `${qualified[1]}.sqlite_master` : 'sqlite_master'
-  const name = qualified ? qualified[2]! : table
-  const row = db.prepare(`SELECT name FROM ${master} WHERE type = 'table' AND name = ?`).get(name)
-  return row !== undefined && row !== null
-}
-
 export const snapshotPlugin: LedgerPlugin = definePlugin({
   manifest: {
     name: 'plugin-snapshot',
@@ -87,30 +78,8 @@ export const snapshotPlugin: LedgerPlugin = definePlugin({
 
     const restoreFull = async (file: string): Promise<number> => {
       const snapPath = join(dir, file)
-      db.prepare('ATTACH DATABASE ? AS snap').run(snapPath)
-      try {
-        db.exec('BEGIN')
-        try {
-          // 核心表整表替换（快照与库同 schema 版本；users 为插件自带表，双方都存在时一并回迁）
-          const tables = ['entries', 'entry_revisions', 'type_defs', 'field_defs', 'users']
-          let affected = 0
-          for (const t of tables) {
-            if (!tableExists(db, t) || !tableExists(db, `snap.${t}`)) continue
-            db.exec(`DELETE FROM ${t}`)
-            db.exec(`INSERT INTO ${t} SELECT * FROM snap.${t}`)
-            if (t === 'entries') {
-              affected = (db.prepare('SELECT COUNT(*) AS c FROM entries').get() as { c: number }).c
-            }
-          }
-          db.exec('COMMIT')
-          return affected
-        } catch (e) {
-          db.exec('ROLLBACK')
-          throw e
-        }
-      } finally {
-        db.exec('DETACH DATABASE snap')
-      }
+      await host.storage.importAll(snapPath, { createSafetyBackup: true })
+      return (db.prepare('SELECT COUNT(*) AS c FROM entries').get() as { c: number }).c
     }
 
     const restoreBook = (file: string): number => {
@@ -139,11 +108,7 @@ export const snapshotPlugin: LedgerPlugin = definePlugin({
         if (scope === 'full') {
           file = `full-${stamp()}.db`
           const dest = join(dir, file)
-          if (db.backup) {
-            await db.backup(dest)
-          } else {
-            db.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`)
-          }
+          await host.storage.exportAll({ destination: dest })
           return infoOf(file)
         }
         file = `book-${bookId}-${stamp()}.json`

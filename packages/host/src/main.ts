@@ -1,8 +1,9 @@
-import { resolveLedgerHome } from './paths.js'
+import { openRuntimeConfig } from '@ledger/kernel'
 import { runHostMain } from './host.js'
 
-const home = resolveLedgerHome()
-runHostMain(home)
+const config = await openRuntimeConfig({ watch: true })
+const home = config.require<string>('storage.dataDir')
+runHostMain(home, config)
   .then((code) => process.exit(code))
   .catch((e) => {
     console.error('[host] fatal:', e)

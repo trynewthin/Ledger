@@ -6,10 +6,10 @@ import { connect } from 'node:net'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startHost, type HostHandle } from '@ledger/host'
+import { ProjectConfigStore } from '@ledger/kernel'
 
 const exec = promisify(execFile)
 const REPO = resolve(__dirname, '../../..')
-process.env['LEDGER_HTTP_PORT'] = '7421'
 const HTTP_PORT = 7421
 
 /** 轻量 socket RPC 客户端（测试内联版，与 plugins/cli 的实现同一协议） */
@@ -53,9 +53,15 @@ function rpcConnectable(sockPath: string): Promise<boolean> {
 
 let home: string
 let handle: HostHandle
+let config: ProjectConfigStore
 
 beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), 'ledger-host-'))
+  writeFileSync(
+    join(home, 'ledger.config.json'),
+    JSON.stringify({ storage: { dataDir: home }, plugins: { 'plugin-http': { port: HTTP_PORT } } }),
+  )
+  config = await ProjectConfigStore.open({ projectRoot: home, watch: true, debounceMs: 10 })
 })
 afterAll(async () => {
   await handle?.shutdown().catch(() => undefined)
@@ -111,7 +117,7 @@ function writePlugin(dir: string, source: string, manifest?: Record<string, unkn
 
 describe('resident host', () => {
   it('starts, serves socket RPC, and reports host.info', async () => {
-    handle = await startHost({ home })
+    handle = await startHost({ home, configProvider: config })
     expect(handle.socketPath).toContain('host.sock')
 
     const info = await rpcCall(handle.socketPath, { command: 'host.info', context: { source: 'cli' } })

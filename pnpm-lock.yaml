@@ -59,6 +59,9 @@ importers:
       '@ledger/domain':
         specifier: workspace:^
         version: link:../domain
+      '@ledger/plugin-contract':
+        specifier: workspace:^
+        version: link:../plugin-contract
       better-sqlite3:
         specifier: ^12
         version: 12.11.1
