@@ -54,7 +54,6 @@ describe('entry aggregate', () => {
   it('creates a valid entry with defaults', () => {
     const e = createEntry(base)
     expect(e.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/)
-    expect(e.bookId).toBe('default')
     expect(e.type).toBeNull()
     expect(e.revision).toBe(1)
     expect(e.voidedAt).toBeNull()

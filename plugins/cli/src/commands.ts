@@ -329,6 +329,129 @@ export function buildProgram(ctx: CliContext): Command {
       )
     })
 
+  // ---- Book Core：账本 = 完整项目状态，不是单条 Entry 的分区 ----
+  const bookCmd = program.command('book').description('账本管理（Book Core）')
+  bookCmd
+    .command('create <name>')
+    .description('将当前完整项目状态保存为账本并设为当前账本')
+    .action(async (name: string) => {
+      const book = unwrap<any>(await call('book.create', { name }))
+      if (ctx.json) console.log(JSON.stringify(book, null, 2))
+      else console.log(`✓ 已创建并切换到账本 ${book.name} (${book.id})`)
+    })
+  bookCmd
+    .command('list')
+    .description('列出账本')
+    .action(async () => {
+      const [books, current] = await Promise.all([
+        unwrap<any[]>(await call('book.list')),
+        unwrap<any>(await call('book.current')),
+      ])
+      if (ctx.json) return console.log(JSON.stringify({ books, current }, null, 2))
+      printTable(
+        ['名称', '当前', '创建时间', 'ID'],
+        books.map((book) => [book.name, current?.id === book.id ? '是' : '', formatTs(book.createdAt), book.id]),
+      )
+    })
+  bookCmd
+    .command('current')
+    .description('读取当前账本')
+    .action(async () => {
+      const book = unwrap<any>(await call('book.current'))
+      if (ctx.json) console.log(JSON.stringify(book ?? null, null, 2))
+      else console.log(book ? `${book.name} (${book.id})` : '（尚未创建账本）')
+    })
+  bookCmd
+    .command('delete <id>')
+    .description('删除非当前账本')
+    .action(async (id: string) => {
+      const result = unwrap(await call('book.delete', { id }))
+      if (ctx.json) console.log(JSON.stringify(result, null, 2))
+      else console.log(`✓ 已删除账本 ${id}`)
+    })
+  bookCmd
+    .command('switch <id>')
+    .description('切换完整项目状态；常驻宿主需要重启后重建插件运行态')
+    .action(async (id: string) => {
+      const result = unwrap<any>(await call('book.switch', { id }))
+      if (ctx.json) console.log(JSON.stringify(result, null, 2))
+      else console.log(`✓ 已切换到账本 ${result.book.name}${result.restartRequired ? '；请重启常驻宿主' : ''}`)
+    })
+  const bookTagCmd = bookCmd.command('tag').description('账本标签绑定（plugin-core-types）')
+  bookTagCmd
+    .command('bind <bookId> <tagIds...>')
+    .description('为账本绑定一个或多个标签')
+    .action(async (bookId: string, tagIds: string[]) => printTagBinding(ctx, unwrap(await call('book.tag.bind', { bookId, tagIds }))))
+  bookTagCmd
+    .command('unbind <bookId> <tagIds...>')
+    .description('解除账本标签绑定')
+    .action(async (bookId: string, tagIds: string[]) => printTagBinding(ctx, unwrap(await call('book.tag.unbind', { bookId, tagIds }))))
+  bookTagCmd
+    .command('list <bookId>')
+    .description('读取账本标签及其反查标签组')
+    .action(async (bookId: string) => printTagBinding(ctx, unwrap(await call('book.tag.list', { bookId }))))
+
+  // ---- 标签：标签组与标签的 CRUD 均由 plugin-core-types 提供 ----
+  const tagCmd = program.command('tag').description('标签管理（plugin-core-types）')
+  const tagGroupCmd = tagCmd.command('group').description('标签组管理')
+  tagGroupCmd
+    .command('create <name>')
+    .description('创建标签组')
+    .action(async (name: string) => printJsonOrTable(ctx, unwrap(await call('tag-group.create', { name })), ['ID', '名称'], (group: any) => [[group.id, group.name]]))
+  tagGroupCmd
+    .command('list')
+    .description('列出标签组')
+    .action(async () => printJsonOrTable(ctx, unwrap(await call('tag-group.list')), ['ID', '名称'], (groups: any[]) => groups.map((group) => [group.id, group.name])))
+  tagGroupCmd
+    .command('get <id>')
+    .description('读取标签组')
+    .action(async (id: string) => printJsonOrTable(ctx, unwrap(await call('tag-group.get', { id })), ['ID', '名称'], (group: any) => [[group.id, group.name]]))
+  tagGroupCmd
+    .command('update <id> <name>')
+    .description('更新标签组')
+    .action(async (id: string, name: string) => printJsonOrTable(ctx, unwrap(await call('tag-group.update', { id, name })), ['ID', '名称'], (group: any) => [[group.id, group.name]]))
+  tagGroupCmd
+    .command('delete <id>')
+    .description('删除标签组及其标签绑定')
+    .action(async (id: string) => {
+      const result = unwrap(await call('tag-group.delete', { id }))
+      if (ctx.json) console.log(JSON.stringify(result, null, 2))
+      else console.log(`✓ 已删除标签组 ${id}`)
+    })
+  tagCmd
+    .command('create <groupId> <name>')
+    .description('在标签组中创建标签')
+    .action(async (groupId: string, name: string) => printJsonOrTable(ctx, unwrap(await call('tag.create', { groupId, name })), ['ID', '标签组', '名称'], (tag: any) => [[tag.id, tag.groupId, tag.name]]))
+  tagCmd
+    .command('list')
+    .description('列出标签')
+    .option('-g, --group <id>', '按标签组过滤')
+    .action(async (opts) => printJsonOrTable(ctx, unwrap(await call('tag.list', opts.group ? { groupId: opts.group } : {})), ['ID', '标签组', '名称'], (tags: any[]) => tags.map((tag) => [tag.id, tag.groupId, tag.name])))
+  tagCmd
+    .command('get <id>')
+    .description('读取标签')
+    .action(async (id: string) => printJsonOrTable(ctx, unwrap(await call('tag.get', { id })), ['ID', '标签组', '名称'], (tag: any) => [[tag.id, tag.groupId, tag.name]]))
+  tagCmd
+    .command('update <id>')
+    .description('更新标签名称或移动到另一标签组')
+    .option('-n, --name <name>', '新名称')
+    .option('-g, --group <groupId>', '目标标签组')
+    .action(async (id: string, opts) => {
+      const payload: Record<string, string> = { id }
+      if (opts.name !== undefined) payload.name = opts.name
+      if (opts.group !== undefined) payload.groupId = opts.group
+      const tag = unwrap(await call('tag.update', payload))
+      printJsonOrTable(ctx, tag, ['ID', '标签组', '名称'], (item: any) => [[item.id, item.groupId, item.name]])
+    })
+  tagCmd
+    .command('delete <id>')
+    .description('删除标签及其账本绑定')
+    .action(async (id: string) => {
+      const result = unwrap(await call('tag.delete', { id }))
+      if (ctx.json) console.log(JSON.stringify(result, null, 2))
+      else console.log(`✓ 已删除标签 ${id}`)
+    })
+
   // ---- 身份目录（plugin-user 提供 'user' 服务；不在场则 SERVICE_UNAVAILABLE） ----
   const userCmd = program.command('user').description('身份目录（plugin-user）')
   userCmd
@@ -349,77 +472,6 @@ export function buildProgram(ctx: CliContext): Command {
       const user = unwrap(await call('user.get', id ? { id } : {}))
       if (ctx.json) return console.log(JSON.stringify(user, null, 2))
       console.log(`${user.name} (${user.id}) · ${user.kind === 'bot' ? '机器人' : '人'}${user.isDefault ? ' · 默认' : ''}`)
-    })
-
-  // ---- Storage Core 全库快照：零插件可用，仅提供创建、列出、删除和切换 ----
-  const storageCmd = program.command('storage').description('Storage Core 管理')
-  const storageSnapshotCmd = storageCmd.command('snapshot').description('完整存储快照')
-  storageSnapshotCmd
-    .command('create')
-    .description('创建当前完整 SQLite 快照')
-    .action(async () => {
-      const snapshot = unwrap(await call('storage.snapshot.create'))
-      if (ctx.json) console.log(JSON.stringify(snapshot, null, 2))
-      else console.log(`✓ 存储快照已创建 → ${snapshot.id}`)
-    })
-  storageSnapshotCmd
-    .command('list')
-    .description('列出完整存储快照')
-    .action(async () => {
-      const snapshots = unwrap<any[]>(await call('storage.snapshot.list'))
-      if (ctx.json) return console.log(JSON.stringify(snapshots, null, 2))
-      printTable(
-        ['快照', '大小', '创建时间'],
-        snapshots.map((snapshot) => [snapshot.id, `${Math.ceil(snapshot.sizeBytes / 1024)}KB`, formatTs(snapshot.createdAt)]),
-      )
-    })
-  storageSnapshotCmd
-    .command('delete <id>')
-    .description('删除完整存储快照')
-    .action(async (id: string) => {
-      const result = unwrap(await call('storage.snapshot.delete', { id }))
-      if (ctx.json) console.log(JSON.stringify(result, null, 2))
-      else console.log(`✓ 存储快照已删除 → ${id}`)
-    })
-  storageSnapshotCmd
-    .command('switch <id>')
-    .description('切换到完整存储快照（当前数据会先安全备份）')
-    .action(async (id: string) => {
-      const result = unwrap<any>(await call('storage.snapshot.switch', { id }))
-      if (ctx.json) console.log(JSON.stringify(result, null, 2))
-      else console.log(`✓ 已切换到存储快照 → ${result.snapshot.id}`)
-    })
-
-  // ---- 快照与回迁（plugin-snapshot 提供账本级扩展；全库底层操作由 Storage Core 提供） ----
-  const snapCmd = program.command('snapshot').description('快照与回迁（plugin-snapshot）')
-  snapCmd
-    .command('create')
-    .description('创建快照（默认全库 .db；--book <id> 为账本级 JSON）')
-    .option('-b, --book <id>', '账本级快照的 bookId（指定即切换为账本级粒度）')
-    .action(async (opts) => {
-      const payload = opts.book ? { scope: 'book' as const, bookId: opts.book } : {}
-      const info = unwrap(await call('snapshot.create', payload))
-      if (ctx.json) console.log(JSON.stringify(info, null, 2))
-      else console.log(`✓ 快照已创建 → ${info.path}`)
-    })
-  snapCmd
-    .command('list')
-    .description('列出快照')
-    .action(async () => {
-      const list = unwrap(await call('snapshot.list'))
-      if (ctx.json) return console.log(JSON.stringify(list, null, 2))
-      printTable(
-        ['文件', '粒度', '账本', '大小', '创建时间'],
-        list.map((s: any) => [s.file, s.kind, s.bookId ?? '-', `${Math.ceil(s.sizeBytes / 1024)}KB`, formatTs(s.createdAt)]),
-      )
-    })
-  snapCmd
-    .command('restore <file>')
-    .description('回迁到快照（全库整表替换 / 账本级按原 id upsert）')
-    .action(async (file: string) => {
-      const res = unwrap(await call('snapshot.restore', { file }))
-      if (ctx.json) return console.log(JSON.stringify(res, null, 2))
-      console.log(`✓ 已回迁 ${res.restored.file}（影响 ${res.entriesAffected} 条）`)
     })
 
   // ---- 插件管理（AdminHostAPI 语义；冷引导下 install/uninstall 为文件操作） ----
@@ -544,4 +596,29 @@ function requireRpc(ctx: CliContext, op: string): void {
   if (ctx.session.mode !== 'rpc') {
     throw new CliError('NOT_SUPPORTED', `${op} 需常驻宿主运行：先启动 ledger host`)
   }
+}
+
+function printTagBinding(ctx: CliContext, binding: any): void {
+  if (ctx.json) {
+    console.log(JSON.stringify(binding, null, 2))
+    return
+  }
+  const groups = new Map((binding.groups ?? []).map((group: any) => [group.id, group.name]))
+  printTable(
+    ['标签', '标签组'],
+    (binding.tags ?? []).map((tag: any) => [tag.name, groups.get(tag.groupId) ?? tag.groupId]),
+  )
+}
+
+function printJsonOrTable<T>(
+  ctx: CliContext,
+  value: T,
+  headers: string[],
+  rows: (value: T) => string[][],
+): void {
+  if (ctx.json) {
+    console.log(JSON.stringify(value, null, 2))
+    return
+  }
+  printTable(headers, rows(value))
 }

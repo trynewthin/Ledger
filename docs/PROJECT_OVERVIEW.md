@@ -25,7 +25,7 @@ HTTP ──────┼──> Dispatcher ──> LedgerService ──> Entry
 Web UI ────┘         │                │
                      │                ├──> Registry（类型、动态字段）
                      │                └──> EventBus（领域事件）
-                     └──> 插件、身份、快照等命令
+                     └──> Book Core、插件、身份等命令
 ```
 
 所有入口使用同一份 `{ command, payload, context }` 调用协议。`context.source` 和 `context.recorder` 由入口注入，不属于用户填写的账目字段。
@@ -39,8 +39,8 @@ Dispatcher 同时维护声明式能力目录：每个应用命令描述自身领
 ```text
 packages/
   domain/             Entry 聚合、金额与方向、事件、仓储端口、内存实现
-  kernel/             账务服务、Config Core、Dispatcher、Registry、EventBus、插件宿主
-  storage-sqlite/     Storage Core、SQLite 仓储、元数据存储、迁移、整体导入导出
+  kernel/             账务服务、Book/Config Core、Dispatcher、Registry、EventBus、插件宿主
+  storage-sqlite/     Storage Core、SQLite 仓储、控制面元数据、迁移、整体导入导出
   host/               常驻宿主、socket RPC、L2 worker supervisor
   plugin-contract/    后端插件 ABI 与服务契约
   webui-contract/     UI 插件 ABI
@@ -48,14 +48,14 @@ packages/
   webui-shell/        React 前端 shell 与浏览器 UI 插件宿主
 
 plugins/
-  core-types/         类型层级、图标、付款平台动态字段
+  core-types/         标签组、标签与账本标签绑定
+  description/        每条账目的可选文本描述字段
   cli/                CLI 与冷引导/RPC 混合会话
   http/               L2 HTTP API worker
   webui/              L2 Web UI 静态资源与 API 网关
   webui-core-views/   记账、流水、详情 UI 插件
   dataviews/          多维统计 UI 插件
   user/               身份目录与 user 服务
-  snapshot/           全库/账本级快照与恢复
   mcp/                stdio MCP 入口
 ```
 
@@ -68,13 +68,12 @@ plugins/
 - `currency`：支持的 ISO 4217 货币码；多币种记录但不折算。
 - `occurredAt` / `recordedAt`：业务发生时间和入库时间分别保存。
 - `source` / `recorder`：调用来源和记录身份。
-- `bookId`：当前默认 `default`，数据结构已预留多账本。
 - `type`：可空的注册类型 key。
 - `extra`：动态扩展字段值，数据本身不依赖插件存活。
 - `schemaVersion` / `revision`：迁移锚点和修订版本。
 - `voidedAt` / `voidReason`：软作废状态。
 
-核心不变量集中在 `packages/domain`。修订会保留修改前完整快照；物理删除不属于业务能力。
+核心不变量集中在 `packages/domain`。修订会保留修改前完整前像；物理删除不属于业务能力。账本不是 Entry 字段，而是由 Book Core 管理的完整项目状态。
 
 ## 5. 核心能力
 
@@ -83,7 +82,9 @@ plugins/
 - 账目：`entry.add/get/list/revise/void/revisions`
 - 统计：`stats.summary/monthly/byType/byDirection/byRecorder`
 - 元数据：`type.register/list/get`、`field.register/list/get`
-- 插件服务：`user.get/list`、`snapshot.create/list/restore`
+- 账本：`book.create/list/get/current/delete/switch`
+- 标签插件：`tag-group.*`、`tag.*`、`book.tag.bind/list/unbind`
+- 插件服务：`user.get/list`
 - 管理：`plugin.*`、`host.info/shutdown`、`commands.list`
 
 `commands.describe` 返回完整能力目录。HTTP 插件据此编译 REST 路由，例如：
@@ -95,6 +96,8 @@ plugins/
 | `entry.revise` | `PATCH /entries/:id` | `ledger revise` | `revise_entry` |
 | `entry.void` | `POST /entries/:id/void` | `ledger void` | `void_entry` |
 | `stats.summary` | `GET /stats/summary` | `ledger stats summary` | `get_stats` |
+| `book.create` | `POST /books` | `ledger book create` | — |
+| `book.switch` | `POST /books/:id/switch` | `ledger book switch` | — |
 
 `POST /rpc` 继续提供统一协议的直接入口；REST 和 RPC 共享错误模型与业务实现。
 
@@ -120,11 +123,11 @@ Web UI 内部还有独立的 UI 插件层。shell 只负责布局、路由和加
 
 仓库根目录的 `ledger.config.json` 是统一配置入口，样例见 `ledger.config.example.json`。执行 `ledger init` 或 `ledger config init` 会在当前项目根创建配置，并运行核心与已安装 L1 插件声明的初始化器。配置文件不参与提交；相对路径以仓库根目录解析。Config Core 提供不可变快照、校验、订阅和文件热加载，无效更新会保留上一份有效配置。
 
-默认 `storage.dataDir` 是项目根目录下的 `.ledger/`。Storage Core 初始化该目录中的 SQLite 数据库、插件目录、UI 插件目录、快照和备份目录，并将 `.ledger/` 写入项目 `.gitignore`。该启动级配置发生变化时会标记 `restartRequired`，重启后切换目录。`LEDGER_HOME` 仅保留为测试和一次性运行覆盖。
+默认 `storage.dataDir` 是项目根目录下的 `.ledger/`。Storage Core 初始化该目录中的 SQLite 数据库、控制面数据库、账本目录、插件目录、UI 插件目录、快照和备份目录，并将 `.ledger/` 写入项目 `.gitignore`。该启动级配置发生变化时会标记 `restartRequired`，重启后切换目录。`LEDGER_HOME` 仅保留为测试和一次性运行覆盖。
 
-Storage Core 管理共享 SQLite 连接、事务、组件迁移、插件命名空间 KV、整体导入导出，以及完整原生快照的创建、列出、删除和切换。领域 Repository 继续负责 Entry 等业务数据映射；Storage Core 不解释业务语义。
+Storage Core 管理共享 SQLite 连接、事务、组件迁移、账本内插件命名空间 KV、项目控制面 KV，以及整体导入导出和原生快照工件。领域 Repository 继续负责 Entry 等业务数据映射；Storage Core 不解释业务语义。
 
-完整快照通过 `storage.snapshot.create/list/delete/switch` 命令和 `ledger storage snapshot` 使用，零插件可用。现有 `db` 服务作为兼容通道继续提供给 user 和账本级 snapshot 逻辑，新插件应优先使用 `host.storage`。账本级快照仍由 `plugin-snapshot` 扩展。
+Book Core 是唯一的账本业务边界。`book create` 将当前 SQLite 业务状态、仓库根配置和插件启用清单保存为一个账本；`book switch` 恢复它们并要求常驻 host 重启，以重建全部插件运行态。`storage.dataDir` 是定位账本控制面的启动锚点，切换时保持不变。账本目录和跨账本标签位于 Storage Core 控制面，不随账本本体回退。
 
 ## 8. 快速运行
 
@@ -138,8 +141,13 @@ node plugins/cli/dist/cli.js init
 # 零插件冷引导记账
 node plugins/cli/dist/cli.js add -d expense -a 12.50
 
-# 安装基础类型插件
+# 安装账本标签插件
 node plugins/cli/dist/cli.js plugin install plugins/core-types
+node plugins/cli/dist/cli.js book create "家庭账本"
+
+# 安装账目描述核心插件
+node plugins/cli/dist/cli.js plugin install plugins/description
+node plugins/cli/dist/cli.js add -d expense -a 12.50 --description "周末采购"
 
 # 启动常驻宿主
 node plugins/cli/dist/cli.js host
@@ -155,7 +163,7 @@ pnpm -r --no-bail test
 pnpm typecheck
 ```
 
-测试覆盖纯领域、配置热加载、SQLite 迁移、整体导入导出、零插件门禁、插件生命周期、真实 socket/worker/HTTP、CLI 端到端、Web UI 网关、MCP、身份和快照恢复。
+测试覆盖纯领域、Book Core 状态切换、配置热加载、SQLite 迁移、整体导入导出、零插件门禁、插件生命周期、真实 socket/worker/HTTP、CLI 端到端、Web UI 网关、MCP 与身份目录。
 
 修改现有能力前先阅读 [功能开发驾驭工程指南](./FEATURE_DEVELOPMENT_GUIDE.md)。
 
@@ -163,7 +171,7 @@ pnpm typecheck
 
 - 系统是个人本地工具，插件没有签名、沙箱和权限审计。
 - `entry.list` 当前使用 limit/offset，不是游标分页。
-- 多账本存在于模型和过滤器中，但尚未形成完整产品入口。
+- 账本切换后的常驻 host 需要重启；运行态插件实例不在快照中保留。
 - user 是身份目录，不是认证与授权系统。
 - 多币种不做汇率换算和本位币报表。
 

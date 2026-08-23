@@ -14,7 +14,7 @@ import { ServiceRegistry } from './services.js'
 import { Dispatcher } from './dispatcher.js'
 import type { Logger } from '@ledger/plugin-contract'
 import type { ConfigValue, StorageValue } from '@ledger/plugin-contract'
-import type { ConfigProvider, ProjectInitializationProvider, StorageProvider } from './core-services.js'
+import type { BookProvider, ConfigProvider, ProjectInitializationProvider, StorageProvider } from './core-services.js'
 
 export interface HostApiDeps {
   registry: Registry
@@ -23,6 +23,7 @@ export interface HostApiDeps {
   services: ServiceRegistry
   config: ConfigProvider
   storage: StorageProvider
+  books: BookProvider
   initialization: ProjectInitializationProvider
   dispatcher: Dispatcher
   log: Logger
@@ -46,7 +47,7 @@ function ctxFor(name: string, ctx?: Partial<CallContext>): CallContext {
  * 托管项（注册表项/事件订阅/服务）按插件名打标，随 deactivate 自动反注册。
  */
 export function createPluginHostApi(deps: HostApiDeps, ctx: HostApiContext, isAdmin: boolean): HostAPI | AdminHostAPI {
-  const { registry, events, ledger, services, config, storage, initialization } = deps
+  const { registry, events, ledger, services, config, storage, initialization, books } = deps
   const assertConfigRead = (path: string): void => {
     const reads = ctx.configReads ?? []
     if (!reads.some((declared) => path === declared || path.startsWith(`${declared}.`))) {
@@ -124,6 +125,10 @@ export function createPluginHostApi(deps: HostApiDeps, ctx: HostApiContext, isAd
       set: async (key, value) => storage.set(ctx.pluginName, key, value),
       delete: async (key) => storage.delete(ctx.pluginName, key),
       list: async <T extends StorageValue = StorageValue>(prefix?: string) => storage.list<T>(ctx.pluginName, prefix),
+      getProject: async <T extends StorageValue = StorageValue>(key: string) => storage.getProject<T>(ctx.pluginName, key),
+      setProject: async (key, value) => storage.setProject(ctx.pluginName, key, value),
+      deleteProject: async (key) => storage.deleteProject(ctx.pluginName, key),
+      listProject: async <T extends StorageValue = StorageValue>(prefix?: string) => storage.listProject<T>(ctx.pluginName, prefix),
       exportAll: (options) => storage.exportAll(options),
       inspectImport: (source) => storage.inspectImport(source),
       importAll: (source, options) => storage.importAll(source, options),
@@ -131,6 +136,14 @@ export function createPluginHostApi(deps: HostApiDeps, ctx: HostApiContext, isAd
       listSnapshots: () => storage.listSnapshots(),
       deleteSnapshot: (id) => storage.deleteSnapshot(id),
       switchSnapshot: (id) => storage.switchSnapshot(id),
+    },
+    books: {
+      create: (input) => books.create(input),
+      get: (id) => books.get(id),
+      list: () => books.list(),
+      current: () => books.current(),
+      delete: (id) => books.delete(id),
+      switch: (id) => books.switch(id),
     },
     dispatch: async (req: RpcRequest): Promise<RpcResult> =>
       deps.dispatcher.dispatch({

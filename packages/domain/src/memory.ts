@@ -31,7 +31,6 @@ export class InMemoryEntryRepository implements EntryRepository {
   list(filter?: EntryFilter): { items: EntryData[]; total: number } {
     let rows = [...this.rows.values()]
     if (filter) {
-      if (filter.bookId !== undefined) rows = rows.filter((r) => r.bookId === filter.bookId)
       if (filter.direction !== undefined) rows = rows.filter((r) => r.direction === filter.direction)
       if (filter.type !== undefined) rows = rows.filter((r) => r.type === filter.type)
       if (filter.recorder !== undefined) rows = rows.filter((r) => r.recorder === filter.recorder)

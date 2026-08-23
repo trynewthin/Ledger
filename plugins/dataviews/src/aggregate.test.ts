@@ -11,7 +11,7 @@ import {
 
 function entry(partial: Partial<EntryDTO>): EntryDTO {
   return {
-    id: partial.id ?? 'e1', bookId: 'default', direction: 'expense', amountMinor: 100, currency: 'CNY',
+    id: partial.id ?? 'e1', direction: 'expense', amountMinor: 100, currency: 'CNY',
     occurredAt: 0, recordedAt: 0, source: 'cli', recorder: 'me', type: null, extra: {},
     schemaVersion: 1, revision: 1, voidedAt: null, voidReason: null, ...partial,
   }

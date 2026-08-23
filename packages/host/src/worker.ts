@@ -84,6 +84,7 @@ async function main(): Promise<void> {
       register: () => { throw new Error('project initialization is not available in worker plugins') },
     },
     storage: proxyApi('storage'),
+    books: proxyApi('books'),
     dispatch: ((req: Parameters<HostAPI['dispatch']>[0]) =>
       callMain('dispatch', 'invoke', [req])) as HostAPI['dispatch'],
     log: {

@@ -13,7 +13,6 @@ export interface RevisionRecord {
 }
 
 export interface EntryFilter {
-  bookId?: string
   direction?: Direction
   /** null = 显式过滤无类型条目；undefined = 不过滤 */
   type?: string | null

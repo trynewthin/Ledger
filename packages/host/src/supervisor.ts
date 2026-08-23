@@ -271,6 +271,10 @@ export class WorkerSupervisor {
         if (method === 'set') return kernel.storage.set(rec.name, String(args[0]), args[1] as never)
         if (method === 'delete') return kernel.storage.delete(rec.name, String(args[0]))
         if (method === 'list') return kernel.storage.list(rec.name, args[0] === undefined ? undefined : String(args[0]))
+        if (method === 'getProject') return kernel.storage.getProject(rec.name, String(args[0]))
+        if (method === 'setProject') return kernel.storage.setProject(rec.name, String(args[0]), args[1] as never)
+        if (method === 'deleteProject') return kernel.storage.deleteProject(rec.name, String(args[0]))
+        if (method === 'listProject') return kernel.storage.listProject(rec.name, args[0] === undefined ? undefined : String(args[0]))
         if (method === 'exportAll') return kernel.storage.exportAll(args[0] as never)
         if (method === 'inspectImport') return kernel.storage.inspectImport(String(args[0]))
         if (method === 'importAll') return kernel.storage.importAll(String(args[0]), args[1] as never)
@@ -279,6 +283,11 @@ export class WorkerSupervisor {
         if (method === 'deleteSnapshot') return kernel.storage.deleteSnapshot(String(args[0]))
         if (method === 'switchSnapshot') return kernel.storage.switchSnapshot(String(args[0]))
         throw new AppError('NOT_SUPPORTED', `storage.${method} is not available over worker bridge`)
+      }
+      case 'books': {
+        const fn = (kernel.books as unknown as Record<string, (...a: unknown[]) => unknown>)[method]
+        if (typeof fn !== 'function') throw new AppError('NOT_SUPPORTED', `books.${method} is not available over worker bridge`)
+        return fn.apply(kernel.books, args)
       }
       case 'log': {
         const level = method as keyof Logger

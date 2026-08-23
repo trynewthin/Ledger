@@ -17,5 +17,8 @@
     "@ledger/domain": "workspace:^",
     "@ledger/plugin-contract": "workspace:^",
     "zod": "^3.24"
+  },
+  "devDependencies": {
+    "@ledger/storage-sqlite": "workspace:^"
   }
 }

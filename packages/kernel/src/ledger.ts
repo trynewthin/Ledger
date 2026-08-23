@@ -71,7 +71,6 @@ export class LedgerService {
       recorder: ctx.recorder,
       type,
       extra,
-      bookId: parsed.bookId,
       schemaVersion: CURRENT_SCHEMA_VERSION,
     })
     this.repo.insert(entry)

@@ -51,6 +51,10 @@ importers:
       zod:
         specifier: ^3.24
         version: 3.25.76
+    devDependencies:
+      '@ledger/storage-sqlite':
+        specifier: workspace:^
+        version: link:../storage-sqlite
 
   packages/plugin-contract: {}
 
@@ -146,6 +150,9 @@ importers:
       '@ledger/kernel':
         specifier: workspace:^
         version: link:../../packages/kernel
+      '@ledger/storage-sqlite':
+        specifier: workspace:^
+        version: link:../../packages/storage-sqlite
 
   plugins/dataviews:
     devDependencies:
@@ -161,6 +168,19 @@ importers:
       vite:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)
+
+  plugins/description:
+    dependencies:
+      '@ledger/plugin-contract':
+        specifier: workspace:^
+        version: link:../../packages/plugin-contract
+    devDependencies:
+      '@ledger/domain':
+        specifier: workspace:^
+        version: link:../../packages/domain
+      '@ledger/kernel':
+        specifier: workspace:^
+        version: link:../../packages/kernel
 
   plugins/http:
     dependencies:
@@ -186,28 +206,6 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.1
-
-  plugins/snapshot:
-    dependencies:
-      '@ledger/plugin-contract':
-        specifier: workspace:^
-        version: link:../../packages/plugin-contract
-    devDependencies:
-      '@ledger/domain':
-        specifier: workspace:^
-        version: link:../../packages/domain
-      '@ledger/kernel':
-        specifier: workspace:^
-        version: link:../../packages/kernel
-      '@ledger/storage-sqlite':
-        specifier: workspace:^
-        version: link:../../packages/storage-sqlite
-      '@types/better-sqlite3':
-        specifier: ^9.6.0
-        version: 9.6.0
-      better-sqlite3:
-        specifier: ^12
-        version: 12.11.1
 
   plugins/user:
     dependencies:

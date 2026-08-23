@@ -20,6 +20,12 @@ const SNAPSHOT_ID_RE = /^snapshot-\d+-[0-9a-f-]+\.db$/
  * Entry 等领域映射继续由 Repository 承担，避免存储核心理解业务语义。
  */
 export class SqliteStorageService {
+  /**
+   * 控制面数据库不参与 ledger.db 的导入、导出或快照。
+   * 它只承载“如何管理账本”的小型元数据，不能存放账本业务数据。
+   */
+  private controlDb: Database.Database
+
   constructor(
     private db: Database.Database,
     readonly databasePath: string,
@@ -37,6 +43,19 @@ export class SqliteStorageService {
         version    INTEGER NOT NULL,
         applied_at INTEGER NOT NULL,
         PRIMARY KEY (owner, version)
+      );
+    `)
+    this.controlDb = new Database(join(dirname(databasePath), 'project-meta.db'))
+    this.controlDb.pragma('journal_mode = WAL')
+    this.controlDb.pragma('synchronous = NORMAL')
+    this.controlDb.pragma('busy_timeout = 5000')
+    this.controlDb.exec(`
+      CREATE TABLE IF NOT EXISTS project_kv (
+        owner      TEXT NOT NULL,
+        key        TEXT NOT NULL,
+        value      TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (owner, key)
       );
     `)
   }
@@ -89,6 +108,32 @@ export class SqliteStorageService {
   list<T extends StorageValue = StorageValue>(owner: string, prefix = ''): StorageEntry<T>[] {
     const rows = this.db
       .prepare("SELECT key, value FROM storage_kv WHERE owner = ? AND key LIKE ? ESCAPE '\\' ORDER BY key")
+      .all(owner, `${escapeLike(prefix)}%`) as Array<{ key: string; value: string }>
+    return rows.map((row) => ({ key: row.key, value: JSON.parse(row.value) as T }))
+  }
+
+  getProject<T extends StorageValue = StorageValue>(owner: string, key: string): T | undefined {
+    const row = this.controlDb.prepare('SELECT value FROM project_kv WHERE owner = ? AND key = ?').get(owner, key) as
+      | { value: string }
+      | undefined
+    return row ? JSON.parse(row.value) as T : undefined
+  }
+
+  setProject<T extends StorageValue = StorageValue>(owner: string, key: string, value: T): void {
+    assertStorageKey(owner, key)
+    this.controlDb.prepare(`
+      INSERT INTO project_kv (owner, key, value, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(owner, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(owner, key, JSON.stringify(value), Date.now())
+  }
+
+  deleteProject(owner: string, key: string): void {
+    this.controlDb.prepare('DELETE FROM project_kv WHERE owner = ? AND key = ?').run(owner, key)
+  }
+
+  listProject<T extends StorageValue = StorageValue>(owner: string, prefix = ''): StorageEntry<T>[] {
+    const rows = this.controlDb
+      .prepare("SELECT key, value FROM project_kv WHERE owner = ? AND key LIKE ? ESCAPE '\\' ORDER BY key")
       .all(owner, `${escapeLike(prefix)}%`) as Array<{ key: string; value: string }>
     return rows.map((row) => ({ key: row.key, value: JSON.parse(row.value) as T }))
   }
@@ -225,6 +270,7 @@ export class SqliteStorageService {
 
   close(): void {
     this.db.close()
+    this.controlDb.close()
   }
 
   private snapshotsDir(): string {

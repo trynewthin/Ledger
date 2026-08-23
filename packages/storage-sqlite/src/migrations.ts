@@ -18,7 +18,6 @@ export const MIGRATIONS: Migration[] = [
       db.exec(`
         CREATE TABLE entries (
           id             TEXT PRIMARY KEY,
-          book_id        TEXT NOT NULL DEFAULT 'default',
           direction      TEXT NOT NULL,
           amount_minor   INTEGER NOT NULL,
           currency       TEXT NOT NULL,
@@ -33,7 +32,7 @@ export const MIGRATIONS: Migration[] = [
           voided_at      INTEGER,
           void_reason    TEXT
         );
-        CREATE INDEX idx_entries_book_time ON entries(book_id, occurred_at, direction);
+        CREATE INDEX idx_entries_time ON entries(occurred_at, direction);
         CREATE INDEX idx_entries_type      ON entries(type);
 
         CREATE TABLE entry_revisions (
@@ -86,7 +85,46 @@ export const MIGRATIONS: Migration[] = [
     version: 2,
     name: 'recorder index',
     up: (db) => {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_entries_recorder ON entries(recorder, book_id)')
+      db.exec('CREATE INDEX IF NOT EXISTS idx_entries_recorder ON entries(recorder)')
+    },
+  },
+  {
+    version: 3,
+    name: 'remove entry book partition',
+    up: (db) => {
+      const columns = db.prepare('PRAGMA table_info(entries)').all() as Array<{ name: string }>
+      if (!columns.some((column) => column.name === 'book_id')) return
+      // SQLite 旧版本的 DROP COLUMN 兼容性有限，重建表可确保历史数据库统一移除旧语义。
+      db.exec(`
+        CREATE TABLE entries_without_book (
+          id             TEXT PRIMARY KEY,
+          direction      TEXT NOT NULL,
+          amount_minor   INTEGER NOT NULL,
+          currency       TEXT NOT NULL,
+          occurred_at    INTEGER NOT NULL,
+          recorded_at    INTEGER NOT NULL,
+          source         TEXT NOT NULL,
+          recorder       TEXT NOT NULL,
+          type           TEXT,
+          extra          TEXT NOT NULL DEFAULT '{}',
+          schema_version INTEGER NOT NULL,
+          revision       INTEGER NOT NULL DEFAULT 1,
+          voided_at      INTEGER,
+          void_reason    TEXT
+        );
+        INSERT INTO entries_without_book (
+          id, direction, amount_minor, currency, occurred_at, recorded_at, source, recorder,
+          type, extra, schema_version, revision, voided_at, void_reason
+        ) SELECT
+          id, direction, amount_minor, currency, occurred_at, recorded_at, source, recorder,
+          type, extra, schema_version, revision, voided_at, void_reason
+        FROM entries;
+        DROP TABLE entries;
+        ALTER TABLE entries_without_book RENAME TO entries;
+        CREATE INDEX idx_entries_time ON entries(occurred_at, direction);
+        CREATE INDEX idx_entries_type ON entries(type);
+        CREATE INDEX idx_entries_recorder ON entries(recorder);
+      `)
     },
   },
 ]

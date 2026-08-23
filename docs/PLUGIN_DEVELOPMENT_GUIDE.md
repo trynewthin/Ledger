@@ -6,7 +6,7 @@
 
 | 形态 | 选择条件 | 可用能力 | 主要限制 |
 |---|---|---|---|
-| L1 `inprocess` | 纯逻辑、类型/字段、事件、插件间服务 | 完整 HostAPI、进程内 services | 必须无进程内持久状态，热替换产物必须单文件 |
+| L1 `inprocess` | 纯逻辑、类型/字段/标签、事件、插件间服务 | 完整 HostAPI、进程内 services | 必须无进程内持久状态，热替换产物必须单文件 |
 | L2 `worker` | HTTP、Web server、独立 IO、需要故障隔离 | registry、ledger、dispatch、events、log 的 worker 代理 | services 不跨 worker；重载等于重启 |
 | 冷引导入口 | CLI、MCP、由外部程序管理生命周期 | 自行装配同一 kernel，可按白名单获得 admin | 进程退出即丢失内存状态 |
 | UI 插件 | 页面、widget、详情面板 | UiHostAPI、统一 HTTP client、只读 store | 浏览器环境；不得依赖 Node API |
@@ -47,6 +47,7 @@ export default definePlugin({
 - `services`：提供或消费进程内服务。
 - `config`：读取 manifest 声明的配置路径并订阅热更新。
 - `storage`：访问插件自己的轻量数据命名空间及整体导入导出能力。
+- `books`：读取、创建、列出、删除和切换 Book Core 账本；插件不得自行定义第二套账本语义。
 - `dispatch`：转发统一命令，入口插件应优先使用它。
 - `log`：记录带插件上下文的日志。
 - `meta`：插件名和运行数据目录。
@@ -226,12 +227,19 @@ services 没有版本协商，服务名即契约。破坏性变化必须改变�
 
 ## 7. 使用数据库服务
 
-简单、无业务结构的插件状态优先使用 owner 隔离的 StorageAPI：
+简单、随当前账本切换的插件状态优先使用 owner 隔离的 StorageAPI：
 
 ```ts
 await host.storage.set('cursor', { lastId: '01...' })
 const cursor = await host.storage.get<{ lastId: string }>('cursor')
 const cached = await host.storage.list('cache/')
+```
+
+跨账本的控制面数据（例如账本标签）使用 `getProject/setProject/listProject`。这部分数据描述如何管理账本，不属于某个账本的完整业务状态，因此不会随 `book switch` 回退：
+
+```ts
+await host.storage.setProject('tags', { pinnedBookIds: ['book-id'] })
+const tags = await host.storage.getProject<{ pinnedBookIds: string[] }>('tags')
 ```
 
 复杂结构化数据仍应由插件 Repository 管理。兼容期需要插件自有 SQL 表的 L1 插件按以下方式工作：
@@ -244,7 +252,7 @@ const cached = await host.storage.list('cache/')
 
 只有 Entry、revision、type_defs 和 field_defs 等内核数据应由 storage-sqlite 管理。插件表不能反向成为内核统计成立的前提。
 
-完整快照使用 `host.storage.createSnapshot()`、`listSnapshots()`、`deleteSnapshot()` 和 `switchSnapshot()`；底层导入导出仍可使用 `exportAll()`、`inspectImport()` 和 `importAll()`。核心快照只处理完整存储数据；账本级合并等业务规则应留在上层插件。
+Storage 的原生快照与导入导出是基础设施 API；用户可见的完整状态创建和切换只能通过 `host.books` / `book.*`。不要实现与 Book Core 并列的快照或账本插件。
 
 ## 8. 订阅事件
 
@@ -434,8 +442,9 @@ pnpm typecheck
 
 现有参考实现：
 
-- 类型/字段插件：`plugins/core-types`
-- 数据库服务插件：`plugins/user`、`plugins/snapshot`
+- 标签插件：`plugins/core-types`
+- 账目描述插件：`plugins/description`
+- 数据库服务插件：`plugins/user`
 - L2 入口插件：`plugins/http`、`plugins/webui`
 - 冷引导入口：`plugins/cli`、`plugins/mcp`
 - UI 页面插件：`plugins/webui-core-views`

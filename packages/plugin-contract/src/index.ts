@@ -26,7 +26,6 @@ export interface ConfigStatus {
 
 export interface EntryDTO {
   id: string
-  bookId: string
   direction: Direction
   amountMinor: number
   currency: string
@@ -112,7 +111,6 @@ export interface AddEntryInput {
   extra?: Record<string, unknown>
   /** 严格模式：拒绝未注册的 extra 键 */
   strictExtra?: boolean
-  bookId?: string
 }
 
 export interface ReviseEntryPatch {
@@ -123,7 +121,6 @@ export interface ReviseEntryPatch {
   occurredAt?: number
   /** 整体替换 extra（明确语义，不做隐式合并） */
   extra?: Record<string, unknown>
-  bookId?: string
 }
 
 export interface ReviseEntryInput {
@@ -134,7 +131,6 @@ export interface ReviseEntryInput {
 }
 
 export interface EntryFilter {
-  bookId?: string
   direction?: Direction
   /** null = 显式过滤无类型条目；undefined = 不过滤 */
   type?: string | null
@@ -358,6 +354,11 @@ export interface StorageAPI {
   set<T extends StorageValue = StorageValue>(key: string, value: T): Promise<void>
   delete(key: string): Promise<void>
   list<T extends StorageValue = StorageValue>(prefix?: string): Promise<StorageEntry<T>[]>
+  /** 项目控制面数据不随账本切换；用于账本目录、跨账本标签等元数据。 */
+  getProject<T extends StorageValue = StorageValue>(key: string): Promise<T | undefined>
+  setProject<T extends StorageValue = StorageValue>(key: string, value: T): Promise<void>
+  deleteProject(key: string): Promise<void>
+  listProject<T extends StorageValue = StorageValue>(prefix?: string): Promise<StorageEntry<T>[]>
   exportAll(options: { destination: string }): Promise<StorageArtifact>
   inspectImport(source: string): Promise<StorageImportPlan>
   importAll(source: string, options?: { createSafetyBackup?: boolean }): Promise<StorageImportResult>
@@ -365,6 +366,32 @@ export interface StorageAPI {
   listSnapshots(): Promise<StorageSnapshot[]>
   deleteSnapshot(id: string): Promise<void>
   switchSnapshot(id: string): Promise<StorageSnapshotSwitchResult>
+}
+
+/** Book Core 的业务实体：一次完整项目状态保存，而不是条目上的分类字段。 */
+export interface Book {
+  id: string
+  name: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface BookSwitchResult {
+  book: Book
+  /** 根配置已经重载；storage.dataDir 作为启动锚点保持不变。 */
+  configReloaded: boolean
+  /** 已安装插件与启动级资源在下一次 host 启动时按新账本状态重新装配。 */
+  restartRequired: boolean
+  safetyBackup?: string
+}
+
+export interface BookAPI {
+  create(input: { name: string }): Promise<Book>
+  get(id: string): Promise<Book>
+  list(): Promise<Book[]>
+  current(): Promise<Book | undefined>
+  delete(id: string): Promise<void>
+  switch(id: string): Promise<BookSwitchResult>
 }
 
 // ---------------------------------------------------------------------------
@@ -406,26 +433,45 @@ export interface UserService {
   setUserName(id: string, name: string): UserRecord
 }
 
-export interface SnapshotInfo {
-  /** snapshots 目录内文件名 */
-  file: string
-  /** 绝对路径 */
-  path: string
-  kind: 'full' | 'book'
-  bookId?: string
+/** 可变展示名称使用稳定 id 关联；标签组不是账目绑定的一部分。 */
+export interface TagGroup {
+  id: string
+  name: string
   createdAt: number
-  sizeBytes: number
+  updatedAt: number
 }
 
-/**
- * 'snapshot' 服务（plugin-snapshot 提供）：快照与回迁，单文件即备份单元。
- * full = SQLite backup 整库副本；book = 按 book_id 的 JSON 导出（entries + revisions + 相关 type/field 定义）。
- * 服务抛出的错误可携带 code（如 SNAPSHOT_NOT_FOUND），由 kernel 命令层翻译进错误模型。
- */
-export interface SnapshotService {
-  create(scope: 'full' | 'book', bookId?: string): Promise<SnapshotInfo>
-  list(): SnapshotInfo[]
-  restore(file: string): Promise<{ restored: SnapshotInfo; entriesAffected: number }>
+/** 标签只隶属于一个标签组；移动标签时，既有账目绑定无需改写。 */
+export interface Tag {
+  id: string
+  groupId: string
+  name: string
+  createdAt: number
+  updatedAt: number
+}
+
+/** 一个账本的标签绑定视图；groups 由已绑定标签反查，不单独持久化。 */
+export interface BookTagBinding {
+  bookId: string
+  tags: Tag[]
+  groups: TagGroup[]
+}
+
+/** 'tags' 服务（plugin-core-types 提供）：标签组、标签和账本标签绑定。 */
+export interface TagService {
+  createGroup(input: { name: string }): Promise<TagGroup>
+  getGroup(id: string): Promise<TagGroup>
+  listGroups(): Promise<TagGroup[]>
+  updateGroup(input: { id: string; name: string }): Promise<TagGroup>
+  deleteGroup(id: string): Promise<void>
+  createTag(input: { groupId: string; name: string }): Promise<Tag>
+  getTag(id: string): Promise<Tag>
+  listTags(filter?: { groupId?: string }): Promise<Tag[]>
+  updateTag(input: { id: string; groupId?: string; name?: string }): Promise<Tag>
+  deleteTag(id: string): Promise<void>
+  bindBookTags(input: { bookId: string; tagIds: string[] }): Promise<BookTagBinding>
+  unbindBookTags(input: { bookId: string; tagIds: string[] }): Promise<BookTagBinding>
+  listBookTags(bookId: string): Promise<BookTagBinding>
 }
 
 export interface Logger {
@@ -489,6 +535,7 @@ export interface HostAPI {
   config: ConfigAPI
   initialization: ProjectInitializationAPI
   storage: StorageAPI
+  books: BookAPI
   /** 统一调用协议入口（入口插件转发外部调用的正道；context 缺省以插件身份注入） */
   dispatch(req: RpcRequest): Promise<RpcResult>
   log: Logger

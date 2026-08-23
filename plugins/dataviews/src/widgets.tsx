@@ -156,7 +156,7 @@ export function TypeBreakdownWidget({ client }: WidgetProps) {
     ])
     const labels = new Map(types.map((t) => [t.key, t.label]))
     const entries = items.map((i) => ({
-      id: i.type ?? '', bookId: '', direction: i.direction as EntryDTO['direction'], amountMinor: Object.values(i.totals)[0]?.totalMinor ?? 0,
+      id: i.type ?? '', direction: i.direction as EntryDTO['direction'], amountMinor: Object.values(i.totals)[0]?.totalMinor ?? 0,
       currency: Object.keys(i.totals)[0] ?? '', occurredAt: 0, recordedAt: 0, source: '', recorder: '', type: i.type,
       extra: {}, schemaVersion: 1, revision: 1, voidedAt: null, voidReason: null,
     }))
@@ -201,7 +201,7 @@ export function PlatformBreakdownWidget({ client }: WidgetProps) {
       <div style={titleStyle}>付款平台分布</div>
       <FilterBar filter={pending} onChange={setPending} onRefresh={() => { setFilter(pending); void refresh(pending).catch(() => undefined) }} />
       {loaded ? <BarList buckets={state.buckets} currency={state.currency} color={INDIGO} /> : <div style={noteStyle}>加载中…</div>}
-      <div style={{ marginTop: 6, fontSize: 11, color: '#a1a1aa' }}>经 extra.payment_platform 聚合（core-types 注册该字段后有效）</div>
+      <div style={{ marginTop: 6, fontSize: 11, color: '#a1a1aa' }}>经 extra.payment_platform 聚合（注册该字段并写入数据后有效）</div>
     </div>
   )
 }

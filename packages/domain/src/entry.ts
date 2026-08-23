@@ -7,7 +7,6 @@ import { ulid } from './ulid.js'
 /** 系统唯一聚合根。不变量在构造时自防护：不合法的 Entry 无法被构造，脏数据无法诞生。 */
 export interface EntryData {
   id: string
-  bookId: string
   direction: Direction
   /** 最小货币单位整数（分），恒正，方向由 direction 表达 */
   amountMinor: number
@@ -41,7 +40,6 @@ export interface CreateEntryInput {
   recorder: string
   type?: string | null
   extra?: Record<string, unknown>
-  bookId?: string
   schemaVersion: number
 }
 
@@ -52,7 +50,6 @@ export interface EntryPatch {
   type?: string | null
   occurredAt?: number
   extra?: Record<string, unknown>
-  bookId?: string
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -87,9 +84,6 @@ export function assertEntryInvariants(e: EntryData): void {
   if (!isPlainObject(e.extra)) {
     throw new DomainError('INVALID_ENTRY', 'extra must be a plain object')
   }
-  if (typeof e.bookId !== 'string' || e.bookId.length === 0) {
-    throw new DomainError('INVALID_ENTRY', 'bookId must be a non-empty string')
-  }
   if (!Number.isInteger(e.schemaVersion) || e.schemaVersion < 1) {
     throw new DomainError('INVALID_ENTRY', 'schemaVersion must be a positive integer')
   }
@@ -104,7 +98,6 @@ export function assertEntryInvariants(e: EntryData): void {
 export function createEntry(input: CreateEntryInput): EntryData {
   const entry: EntryData = {
     id: input.id ?? ulid(),
-    bookId: input.bookId ?? 'default',
     direction: input.direction,
     amountMinor: input.amountMinor,
     currency: input.currency.toUpperCase(),

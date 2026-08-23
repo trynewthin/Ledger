@@ -49,7 +49,7 @@ describe('SqliteStorageService', () => {
     const initialized = await initializeStorageProject({ dataDir, projectRoot: dir })
     expect(initialized.dataDir).toBe(dataDir)
     expect(initialized.databasePath).toBe(join(dataDir, 'ledger.db'))
-    expect(initialized.appliedMigrations).toEqual([1, 2])
+    expect(initialized.appliedMigrations).toEqual([1, 2, 3])
     expect(initialized.gitignoreEntry).toBe('.ledger/')
     initialized.close()
   })
@@ -68,21 +68,33 @@ describe('SqliteStorageService', () => {
     service.close()
   })
 
+  it('keeps project control-plane metadata outside an imported book dataset', async () => {
+    const { dir, service } = await fixture('project-meta')
+    service.setProject('core.book', 'catalog', { currentBookId: 'book-a' })
+    service.set('plugin-demo', 'state', { revision: 1 })
+    const snapshot = await service.exportAll({ destination: join(dir, 'book.db') })
+    service.set('plugin-demo', 'state', { revision: 2 })
+    await service.importAll(snapshot.path)
+    expect(service.getProject('core.book', 'catalog')).toEqual({ currentBookId: 'book-a' })
+    expect(service.get('plugin-demo', 'state')).toEqual({ revision: 1 })
+    service.close()
+  })
+
   it('exports, inspects, and atomically imports the complete SQLite dataset', async () => {
     const source = await fixture('source')
     source.service.raw().prepare(`
-      INSERT INTO entries (id, book_id, direction, amount_minor, currency, occurred_at, recorded_at,
+      INSERT INTO entries (id, direction, amount_minor, currency, occurred_at, recorded_at,
         source, recorder, type, extra, schema_version, revision, voided_at, void_reason)
-      VALUES ('01SOURCE', 'default', 'expense', 100, 'CNY', 1, 1, 'test', 'me', NULL, '{}', 1, 1, NULL, NULL)
+      VALUES ('01SOURCE', 'expense', 100, 'CNY', 1, 1, 'test', 'me', NULL, '{}', 1, 1, NULL, NULL)
     `).run()
     source.service.set('plugin-demo', 'token', { value: 42 })
     const artifact = await source.service.exportAll({ destination: join(source.dir, 'snapshot.db') })
 
     const target = await fixture('target')
     target.service.raw().prepare(`
-      INSERT INTO entries (id, book_id, direction, amount_minor, currency, occurred_at, recorded_at,
+      INSERT INTO entries (id, direction, amount_minor, currency, occurred_at, recorded_at,
         source, recorder, type, extra, schema_version, revision, voided_at, void_reason)
-      VALUES ('01TARGET', 'default', 'income', 200, 'CNY', 2, 2, 'test', 'me', NULL, '{}', 1, 1, NULL, NULL)
+      VALUES ('01TARGET', 'income', 200, 'CNY', 2, 2, 'test', 'me', NULL, '{}', 1, 1, NULL, NULL)
     `).run()
 
     const plan = await target.service.inspectImport(artifact.path)

@@ -1,6 +1,6 @@
 # Ledger
 
-个人财务数据操作系统：一套自洽的收支数据内核 + 微内核插件体系。交易类型、动态字段是插件；CLI、WebUI、MCP、HTTP 是插件；WebUI 内部又自成 UI 插件宿主（分形插件架构）。内核只负责让插件活着。
+个人财务数据操作系统：一套自洽的收支与账本内核 + 微内核插件体系。Book Core 管理完整项目状态；标签、CLI、WebUI、MCP、HTTP 是可替换扩展；WebUI 内部又自成 UI 插件宿主（分形插件架构）。
 
 ## 文档
 
@@ -23,13 +23,19 @@ node plugins/cli/dist/cli.js init
 # CLI 冷引导记账（storage.dataDir 来自仓库根 ledger.config.json）
 node plugins/cli/dist/cli.js add -d expense -a 12.50
 node plugins/cli/dist/cli.js plugin install plugins/core-types
-node plugins/cli/dist/cli.js add -d expense -a 12.50 -t food-coffee --payment-platform alipay
+node plugins/cli/dist/cli.js book create "家庭账本"
+node plugins/cli/dist/cli.js tag group create "用途"
+# 使用上一步返回的标签组与账本 ID 创建、绑定标签
+node plugins/cli/dist/cli.js tag create <group-id> "家庭"
+node plugins/cli/dist/cli.js book tag bind <book-id> <tag-id>
 
-# 身份与快照（plugin-user / plugin-snapshot）
+# 安装账目描述核心插件，随后 add/revise 会出现 --description 参数
+node plugins/cli/dist/cli.js plugin install plugins/description
+node plugins/cli/dist/cli.js add -d expense -a 12.50 --description "周末采购"
+
+# 身份目录（plugin-user）
 node plugins/cli/dist/cli.js plugin install plugins/user
 node plugins/cli/dist/cli.js user get
-node plugins/cli/dist/cli.js plugin install plugins/snapshot
-node plugins/cli/dist/cli.js snapshot create
 
 # 常驻宿主 + WebUI（安装 webui、core-views、dataviews 后访问 http://127.0.0.1:7420）
 node plugins/cli/dist/cli.js host
@@ -43,7 +49,7 @@ node plugins/cli/dist/cli.js ui install plugins/dataviews/dist
 
 HTTP 插件同时提供领域化 REST 与兼容 RPC：`POST /entries`、`GET /entries`、`PATCH /entries/:id`、`GET /stats/summary`，以及 `POST /rpc`。`GET /capabilities` 可发现全部应用命令及其 CLI/HTTP/MCP 绑定。
 
-Storage Core 的完整快照不依赖插件：`ledger storage snapshot create/list/delete/switch`。`plugin-snapshot` 在此基础上提供账本级快照等扩展能力。
+Book Core 的用户命令是 `ledger book create/list/current/delete/switch`。创建账本会保存当前完整业务状态；切换账本恢复对应数据与项目设置。Storage Core 的快照 API 只作为 Book Core 的内部基础设施，不再提供平行的用户入口。
 
 ## 核心理念
 

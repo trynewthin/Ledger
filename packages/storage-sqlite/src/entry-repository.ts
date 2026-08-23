@@ -4,7 +4,6 @@ import type { EntryData, EntryFilter, EntryRepository, RevisionRecord } from '@l
 function rowToEntry(row: any): EntryData {
   return {
     id: row.id,
-    bookId: row.book_id,
     direction: row.direction,
     amountMinor: row.amount_minor,
     currency: row.currency,
@@ -24,7 +23,6 @@ function rowToEntry(row: any): EntryData {
 function entryToRow(e: EntryData) {
   return {
     id: e.id,
-    book_id: e.bookId,
     direction: e.direction,
     amount_minor: e.amountMinor,
     currency: e.currency,
@@ -48,13 +46,13 @@ export class SqliteEntryRepository implements EntryRepository {
 
   constructor(private db: Database.Database) {
     this.insertStmt = db.prepare(`
-      INSERT INTO entries (id, book_id, direction, amount_minor, currency, occurred_at, recorded_at,
+      INSERT INTO entries (id, direction, amount_minor, currency, occurred_at, recorded_at,
                            source, recorder, type, extra, schema_version, revision, voided_at, void_reason)
-      VALUES (@id, @book_id, @direction, @amount_minor, @currency, @occurred_at, @recorded_at,
+      VALUES (@id, @direction, @amount_minor, @currency, @occurred_at, @recorded_at,
               @source, @recorder, @type, @extra, @schema_version, @revision, @voided_at, @void_reason)
     `)
     this.replaceStmt = db.prepare(`
-      UPDATE entries SET book_id=@book_id, direction=@direction, amount_minor=@amount_minor,
+      UPDATE entries SET direction=@direction, amount_minor=@amount_minor,
         currency=@currency, occurred_at=@occurred_at, recorded_at=@recorded_at, source=@source,
         recorder=@recorder, type=@type, extra=@extra, schema_version=@schema_version,
         revision=@revision, voided_at=@voided_at, void_reason=@void_reason
@@ -80,7 +78,6 @@ export class SqliteEntryRepository implements EntryRepository {
     const where: string[] = []
     const params: Record<string, unknown> = {}
     if (filter) {
-      if (filter.bookId !== undefined) { where.push('book_id = @bookId'); params.bookId = filter.bookId }
       if (filter.direction !== undefined) { where.push('direction = @direction'); params.direction = filter.direction }
       if (filter.type !== undefined) {
         if (filter.type === null) where.push('type IS NULL')

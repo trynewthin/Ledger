@@ -20,10 +20,10 @@ describe('migrations', () => {
   it('applies all versions on fresh db and is idempotent', () => {
     const db = freshDb('migrate')
     const applied = migrate(db)
-    expect(applied).toEqual([1, 2])
-    expect(appliedVersions(db)).toEqual([1, 2])
+    expect(applied).toEqual([1, 2, 3])
+    expect(appliedVersions(db)).toEqual([1, 2, 3])
     migrate(db)
-    expect(appliedVersions(db)).toEqual([1, 2])
+    expect(appliedVersions(db)).toEqual([1, 2, 3])
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name)
     for (const t of ['entries', 'entry_revisions', 'type_defs', 'field_defs', 'users', 'schema_migrations']) {
       expect(tables).toContain(t)
@@ -36,7 +36,7 @@ describe('migrations', () => {
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal')
   })
 
-  it('迁移演练 V1→V2：旧库升级，数据完好，索引到位', () => {
+  it('迁移演练 V1→V3：旧库升级，数据完好，索引到位', () => {
     const path = join(tmp, 'drill.db')
     // 1) 建一个停留在 V1 的旧库并写入数据
     const db1 = openDatabase(path)
@@ -52,11 +52,11 @@ describe('migrations', () => {
     repo1.insert(e)
     db1.close()
 
-    // 2) 新版本代码打开旧库：自动迁移到 V2，数据完好
+    // 2) 新版本代码打开旧库：自动迁移到 V3，数据完好
     const db2 = openDatabase(path)
     const applied = migrate(db2)
-    expect(applied).toEqual([2])
-    expect(appliedVersions(db2)).toEqual([1, 2])
+    expect(applied).toEqual([2, 3])
+    expect(appliedVersions(db2)).toEqual([1, 2, 3])
     const repo2 = new SqliteEntryRepository(db2)
     expect(repo2.get(e.id)!.extra).toEqual({ note: '旧数据' })
     const index = db2
@@ -66,6 +66,28 @@ describe('migrations', () => {
     // 迁移幂等
     expect(migrate(db2)).toEqual([])
     db2.close()
+  })
+
+  it('removes the legacy entry book_id partition when upgrading a pre-Book-Core database', () => {
+    const db = freshDb('legacy-book-id')
+    db.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
+      INSERT INTO schema_migrations (version, applied_at) VALUES (1, 1);
+      CREATE TABLE entries (
+        id TEXT PRIMARY KEY, book_id TEXT NOT NULL DEFAULT 'default', direction TEXT NOT NULL,
+        amount_minor INTEGER NOT NULL, currency TEXT NOT NULL, occurred_at INTEGER NOT NULL,
+        recorded_at INTEGER NOT NULL, source TEXT NOT NULL, recorder TEXT NOT NULL, type TEXT,
+        extra TEXT NOT NULL DEFAULT '{}', schema_version INTEGER NOT NULL, revision INTEGER NOT NULL,
+        voided_at INTEGER, void_reason TEXT
+      );
+      INSERT INTO entries VALUES ('legacy', 'old-partition', 'expense', 100, 'CNY', 1, 1, 'test', 'me', NULL, '{}', 1, 1, NULL, NULL);
+    `)
+
+    expect(migrate(db)).toEqual([2, 3])
+    const columns = (db.prepare('PRAGMA table_info(entries)').all() as Array<{ name: string }>).map((column) => column.name)
+    expect(columns).not.toContain('book_id')
+    expect(db.prepare('SELECT id, amount_minor FROM entries').get()).toEqual({ id: 'legacy', amount_minor: 100 })
+    db.close()
   })
 })
 

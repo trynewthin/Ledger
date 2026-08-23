@@ -24,11 +24,12 @@ pnpm typecheck
 |---|---|---|
 | Entry 永久业务不变量 | `packages/domain` | 没有任何插件时也必须成立 |
 | 账目用例、统计、统一命令 | `packages/kernel` | 所有入口需要共享同一语义 |
+| 完整项目状态、账本切换 | Book Core（`packages/kernel`） | 账本是业务实体，不是存储快照或 Entry 分区 |
 | 数据持久化或查询能力 | `packages/storage-sqlite` + domain port | 属于核心 Entry/元数据持久化 |
 | 无业务配置加载和热更新 | Config Core | 只提供配置事实，不解释消费者行为 |
 | 无业务轻量数据、事务、导入导出 | Storage Core | 只提供持久化机制，不返回业务聚合结果 |
 | 新的通信入口 | 后端插件 | 只是把外部协议转换为统一命令 |
-| 类型、动态字段、可选业务能力 | L1 插件 | 卸载后核心账目仍然有效 |
+| 类型、动态字段、标签等可选业务能力 | L1 插件 | 卸载后核心账目与 Book Core 仍然有效 |
 | 有 server 或高风险 IO | L2 worker 插件 | 需要故障隔离和独立重启 |
 | 页面、widget、详情面板 | UI 插件 | shell 不应承载业务视图 |
 | 跨插件复用能力 | `plugin-contract` 服务契约 + provider 插件 | 消费方需要稳定的结构契约 |
@@ -119,9 +120,9 @@ HTTP 路由保持资源语义，CLI/MCP 保持各自自然名称。不要机械�
 
 不要物理删除账目，不要让统计反查插件表恢复历史语义。简单插件状态优先使用 `host.storage` 的 owner 命名空间；结构化插件数据通过插件 Repository 映射。只有核心模型需要的数据才进入核心 Repository。
 
-Storage Core 的整体导入采用“检查兼容性 → 安全备份 → 同一事务逐表替换”。按账本合并、ID 冲突或 revision 续写属于业务语义，继续由 snapshot 等上层插件实现。
+Storage Core 的整体导入采用“检查兼容性 → 安全备份 → 同一事务逐表替换”。它只处理 SQLite 数据工件；不定义账本名称、当前账本或切换后的运行态。
 
-完整 SQLite 快照是 Storage Core 的基础能力：创建、列出、删除和切换。核心快照不包含保留策略、调度或账本粒度；这些能力由上层插件按需扩展。
+Book Core 是完整状态的唯一业务入口：创建账本时保存业务数据库、仓库根配置和插件启用清单；切换账本时恢复这些内容并重载注册表。账本目录与当前账本指针位于 Storage Core 控制面，不能被账本导入覆盖。`storage.dataDir` 是启动锚点，切换账本不得改变它。
 
 ## 7. 修改配置核心
 
@@ -133,6 +134,8 @@ Storage Core 的整体导入采用“检查兼容性 → 安全备份 → 同一
 6. `storage.dataDir` 等启动级路径变化只标记 `restartRequired`。
 7. 插件读取路径必须加入 `manifest.config.reads`。
 8. 新增配置项时同步 `ledger.config.example.json` 和相关开发文档。
+
+账本内配置与启动配置必须分清：`storage.dataDir` 决定 Book Core 从哪里启动，不属于可切换账本内容；其他项目设置由 Book Core 随账本保存并在切换时由 Config Core 重载。
 
 项目初始化由 `ledger init`（别名 `ledger config init`）执行：Config Core 创建根配置，Storage Core 先准备 `storage.dataDir`，随后已安装的 L1 插件可以运行自己注册的幂等初始化器。初始化器只创建项目资源或基础设施数据，不应创建业务账目。
 
@@ -149,7 +152,17 @@ Storage Core 的整体导入采用“检查兼容性 → 安全备份 → 同一
 
 同 owner 重复注册用于幂等刷新；不同 owner 的 key 冲突应显式失败，不能静默覆盖。
 
-## 9. 增加或修改入口
+## 9. 增加账本标签
+
+标签插件只能管理标签组、标签与 `book_id + tag_id` 关联，不能复制 Book Core 的创建、切换或删除能力。
+
+1. 通过 `host.books.get(bookId)` 验证绑定目标存在。
+2. 关联记录只保存 `tagId`，由标签的 `groupId` 反查标签组。
+3. 标签元数据写入 `host.storage.getProject/setProject` 控制面，避免切换账本时丢失账本管理资料。
+4. 删除标签或标签组时清理关联；移动标签组不重写关联。
+5. 验证 `book.tag.bind/list/unbind`、CLI 和 HTTP 路由使用同一命令。
+
+## 10. 增加或修改入口
 
 入口层只负责四件事：
 
@@ -162,7 +175,7 @@ CLI 使用 `Session.call()`，以保证 socket RPC 与冷引导透明切换。HT
 
 入口不得直接访问 SQLite，也不得重新实现统计、类型方向校验或 Entry 状态转换。
 
-## 10. 修改 Web UI
+## 11. 修改 Web UI
 
 先判断改动属于 shell 还是 UI 插件：
 
@@ -177,7 +190,7 @@ UI 插件通过以下扩展点贡献能力：
 
 新增 UI DTO 时，保持 `webui-contract` 自包含且与后端序列化形态结构兼容。不要让它依赖 `plugin-contract`，也不要在浏览器包中引入 Node 运行时能力。
 
-## 11. 维护错误模型
+## 12. 维护错误模型
 
 预期业务失败必须使用稳定错误码：
 
@@ -188,7 +201,7 @@ UI 插件通过以下扩展点贡献能力：
 
 缺少可选插件服务时使用 `SERVICE_UNAVAILABLE` 明确降级。不要吞掉错误并返回空结果，也不要把业务失败都折叠为 `INTERNAL`。
 
-## 12. 测试分层
+## 13. 测试分层
 
 | 测试层 | 主要证明 |
 |---|---|
@@ -204,7 +217,7 @@ UI 插件通过以下扩展点贡献能力：
 
 测试中的预期错误日志不等于失败；应以 Vitest 退出码和断言结果为准。
 
-## 13. 常见陷阱
+## 14. 常见陷阱
 
 - `verbatimModuleSyntax` 开启后，类型必须使用 `import type`。
 - CLI/host/MCP 入口构建必须关闭 tsup splitting，避免直跑入口判断失效。
@@ -218,7 +231,7 @@ UI 插件通过以下扩展点贡献能力：
 
 更多历史原因见 [归档进度文档的踩坑记录](./archive/PROGRESS.md#5-踩坑记录恢复时先读都是已消耗的时间)。
 
-## 14. 完成定义
+## 15. 完成定义
 
 一项功能只有同时满足以下条件才算完成：
 

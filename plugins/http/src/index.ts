@@ -26,6 +26,9 @@ export function statusForErrorCode(code: string): number {
     case 'FIELD_KEY_TAKEN':
     case 'FIELD_UNKNOWN':
     case 'PLUGIN_NOT_FOUND':
+    case 'BOOK_NOT_FOUND':
+    case 'TAG_GROUP_NOT_FOUND':
+    case 'TAG_NOT_FOUND':
       return 404
     case 'VALIDATION_ERROR':
     case 'INVALID_AMOUNT':
@@ -38,6 +41,10 @@ export function statusForErrorCode(code: string): number {
     case 'FIELD_SCOPE_MISMATCH':
       return 400
     case 'ENTRY_VOIDED':
+    case 'BOOK_NAME_TAKEN':
+    case 'BOOK_ACTIVE':
+    case 'TAG_GROUP_NAME_TAKEN':
+    case 'TAG_NAME_TAKEN':
       return 409
     case 'FORBIDDEN':
       return 403

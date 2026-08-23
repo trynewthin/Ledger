@@ -25,7 +25,6 @@ describe('kernel self-sufficiency with ZERO plugins (permanent CI gate)', () => 
     expect(entry.type).toBeNull()
     expect(entry.source).toBe('cli')
     expect(entry.recorder).toBe('me')
-    expect(entry.bookId).toBe('default')
 
     await kernel.dispatcher.dispatch({
       command: 'entry.add',

@@ -6,7 +6,7 @@ import { SqliteStorageService } from './storage-service.js'
 
 /**
  * Storage Core 声明的项目资源初始化器：创建数据目录、运行核心迁移并准备
- * 插件/快照/备份目录。目录固定在 dataDir 内，避免基础设施文件散落项目根。
+ * 插件/账本/快照/备份目录。目录固定在 dataDir 内，避免基础设施文件散落项目根。
  */
 export async function initializeStorageProject(options: {
   dataDir: string
@@ -23,6 +23,7 @@ export async function initializeStorageProject(options: {
     mkdir(dataDir, { recursive: true }),
     mkdir(join(dataDir, 'plugins'), { recursive: true }),
     mkdir(join(dataDir, 'ui-plugins'), { recursive: true }),
+    mkdir(join(dataDir, 'books'), { recursive: true }),
     mkdir(join(dataDir, 'snapshots'), { recursive: true }),
     mkdir(join(dataDir, 'backups'), { recursive: true }),
   ])

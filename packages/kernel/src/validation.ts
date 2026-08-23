@@ -17,7 +17,6 @@ export const addEntrySchema = z.object({
   occurredAt: z.number().optional(),
   extra: z.record(z.unknown()).optional(),
   strictExtra: z.boolean().optional(),
-  bookId: z.string().min(1).optional(),
 })
 
 export const reviseEntrySchema = z.object({
@@ -32,7 +31,6 @@ export const reviseEntrySchema = z.object({
       type: z.string().min(1).nullable().optional(),
       occurredAt: z.number().optional(),
       extra: z.record(z.unknown()).optional(),
-      bookId: z.string().min(1).optional(),
     })
     .optional(),
 })
@@ -43,7 +41,6 @@ export const voidEntrySchema = z.object({
 })
 
 export const listEntriesSchema = z.object({
-  bookId: z.string().optional(),
   direction: z.enum(['income', 'expense']).optional(),
   type: z.string().nullable().optional(),
   recorder: z.string().optional(),

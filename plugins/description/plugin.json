@@ -1,5 +1,5 @@
 {
-  "name": "plugin-snapshot",
+  "name": "plugin-description",
   "main": "./dist/index.js",
   "isolation": "inprocess"
 }

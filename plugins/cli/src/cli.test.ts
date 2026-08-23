@@ -158,46 +158,32 @@ describe('ledger CLI e2e（冷引导路径）', () => {
     expect(add.code).toBe(0)
   })
 
-  it('plugin install/uninstall: core-types 装卸后数据与统计仍正确', async () => {
+  it('plugin-core-types: 管理标签组、标签，并只向账本绑定标签', async () => {
     const install = await ledger('plugin', 'install', join(REPO, 'plugins/core-types'))
     expect(install.code).toBe(0)
+    const book = parseJson<any>((await ledger('book', 'create', '标签账本', '--json')).stdout)
+    const group = parseJson<any>((await ledger('tag', 'group', 'create', '用途', '--json')).stdout)
+    const tag = parseJson<any>((await ledger('tag', 'create', group.id, '家庭', '--json')).stdout)
+    const bound = await ledger('book', 'tag', 'bind', book.id, tag.id, '--json')
+    expect(bound.code).toBe(0)
+    expect(parseJson<any>(bound.stdout)).toMatchObject({ bookId: book.id, tags: [{ id: tag.id }], groups: [{ id: group.id }] })
 
-    const types = await ledger('type', 'list', '--json')
-    const typeList = parseJson(types.stdout)
-    expect(typeList.some((t: any) => t.key === 'food')).toBe(true)
-    // 完全体：类型层级（小类型挂 parentKey）+ payment_platform 枚举字段（同源动态 flag）
-    expect(typeList.find((t: any) => t.key === 'food-coffee')).toMatchObject({ parentKey: 'food', icon: 'coffee' })
-
-    // 插件来源类型现在可用（本进程冷引导加载）
-    const add = await ledger('add', '-d', 'expense', '-a', '88', '-t', 'food', '--json')
-    expect(add.code).toBe(0)
-    const foodEntry = parseJson(add.stdout)
-
-    const withPlatform = await ledger(
-      'add', '-d', 'expense', '-a', '66', '-t', 'food-coffee', '--payment-platform', 'wechat', '--json',
-    )
-    expect(withPlatform.code).toBe(0)
-    expect(parseJson(withPlatform.stdout).extra).toEqual({ payment_platform: 'wechat' })
-
-    const mismatch = await ledger('add', '-d', 'income', '-a', '1', '-t', 'food')
-    expect(mismatch.stderr).toContain('TYPE_DIRECTION_MISMATCH')
-
-    // 卸载：类型反注册，历史数据仍在、统计正确
     const uninstall = await ledger('plugin', 'uninstall', 'plugin-core-types')
     expect(uninstall.code).toBe(0)
+    const degraded = await ledger('book', 'tag', 'list', book.id)
+    expect(degraded.stderr).toContain('SERVICE_UNAVAILABLE')
+  })
 
-    const after = await ledger('type', 'list', '--json')
-    expect(parseJson(after.stdout).some((t: any) => t.key === 'food')).toBe(false)
+  it('plugin-description: 为每条账目提供 --description 动态参数', async () => {
+    const install = await ledger('plugin', 'install', join(REPO, 'plugins/description'))
+    expect(install.code).toBe(0)
 
-    const notReg = await ledger('add', '-d', 'expense', '-a', '1', '-t', 'food')
-    expect(notReg.stderr).toContain('TYPE_NOT_REGISTERED')
+    const added = await ledger('add', '-d', 'expense', '-a', '12.50', '--description', '周末采购', '--json')
+    expect(added.code).toBe(0)
+    expect(parseJson<any>(added.stdout).extra).toEqual({ description: '周末采购' })
 
-    const stats = await ledger('stats', 'by-type', '--json')
-    const foodStat = parseJson(stats.stdout).find((t: any) => t.type === 'food')
-    expect(foodStat.totals.CNY.totalMinor).toBe(8800)
-
-    const got = await ledger('get', foodEntry.id, '--json')
-    expect(parseJson(got.stdout).entry.type).toBe('food')
+    const uninstall = await ledger('plugin', 'uninstall', 'plugin-description')
+    expect(uninstall.code).toBe(0)
   })
 
   it('plugin-user: install → user.* 可用 → uninstall → 明确降级 SERVICE_UNAVAILABLE', async () => {
@@ -224,32 +210,16 @@ describe('ledger CLI e2e（冷引导路径）', () => {
     expect(parseJson(add.stdout).recorder).toBe('me')
   })
 
-  it('plugin-snapshot: install → 全库快照 → 记账 → restore 回到快照点 → 卸载降级', async () => {
-    const install = await ledger('plugin', 'install', join(REPO, 'plugins/snapshot'))
-    expect(install.code).toBe(0)
-
+  it('Book Core：创建后修改数据，再切换回完整账本状态', async () => {
     const before = parseJson((await ledger('list', '--all', '--json')).stdout).total
-    const created = await ledger('snapshot', 'create', '--json')
-    expect(created.code).toBe(0)
-    const snap = parseJson(created.stdout)
-    expect(snap.kind).toBe('full')
-
-    // 快照后记几笔 → 回迁 → 总量回到快照点
+    const book = parseJson<any>((await ledger('book', 'create', '切换验证', '--json')).stdout)
     await ledger('add', '-d', 'expense', '-a', '123.45', '--json')
-    const restored = await ledger('snapshot', 'restore', snap.file, '--json')
-    expect(restored.code).toBe(0)
-    expect(parseJson(restored.stdout).entriesAffected).toBe(before)
+    expect(parseJson((await ledger('list', '--all', '--json')).stdout).total).toBe(before + 1)
 
-    const after = parseJson((await ledger('list', '--all', '--json')).stdout).total
-    expect(after).toBe(before)
-
-    const list = await ledger('snapshot', 'list', '--json')
-    expect(parseJson(list.stdout).length).toBeGreaterThanOrEqual(1)
-
-    await ledger('plugin', 'uninstall', 'plugin-snapshot')
-    const degraded = await ledger('snapshot', 'list')
-    expect(degraded.code).toBe(1)
-    expect(degraded.stderr).toContain('SERVICE_UNAVAILABLE')
+    const switched = await ledger('book', 'switch', book.id, '--json')
+    expect(switched.code).toBe(0)
+    expect(parseJson<any>(switched.stdout)).toMatchObject({ book: { id: book.id }, restartRequired: true })
+    expect(parseJson((await ledger('list', '--all', '--json')).stdout).total).toBe(before)
   })
 
   it('monthly stats output', async () => {
@@ -274,14 +244,4 @@ describe('ledger CLI e2e（冷引导路径）', () => {
     expect(integrity).toBe('ok')
   })
 
-  it('Storage Core snapshot commands work without plugin-snapshot', async () => {
-    const created = parseJson<{ id: string }>((await ledger('storage', 'snapshot', 'create', '--json')).stdout)
-    const listed = parseJson<Array<{ id: string }>>((await ledger('storage', 'snapshot', 'list', '--json')).stdout)
-    expect(listed.some((snapshot) => snapshot.id === created.id)).toBe(true)
-
-    const deleted = await ledger('storage', 'snapshot', 'delete', created.id, '--json')
-    expect(deleted.code).toBe(0)
-    const remaining = parseJson<Array<{ id: string }>>((await ledger('storage', 'snapshot', 'list', '--json')).stdout)
-    expect(remaining.some((snapshot) => snapshot.id === created.id)).toBe(false)
-  })
 })

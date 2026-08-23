@@ -1,18 +1,26 @@
-import type { CommandDescriptor, Direction, FieldEnumValue, HostControlAPI, PluginAdminAPI, SnapshotService, UserService } from '@ledger/plugin-contract'
+import type {
+  CommandDescriptor,
+  Direction,
+  FieldEnumValue,
+  HostControlAPI,
+  PluginAdminAPI,
+  TagService,
+  UserService,
+} from '@ledger/plugin-contract'
 import { Dispatcher } from './dispatcher.js'
-import { AppError, type KernelErrorCode } from './errors.js'
+import { AppError } from './errors.js'
 import { LedgerService } from './ledger.js'
 import { PluginHost } from './plugin-host.js'
 import { Registry } from './registry.js'
 import type { ServiceRegistry } from './services.js'
-import type { StorageProvider } from './core-services.js'
+import type { BookProvider } from './core-services.js'
 import { listEntriesSchema, parseOrThrow } from './validation.js'
 
 /**
- * 命令注册表：entry.* / stats.* / type.* / field.* / user.* / snapshot.* / plugin.*（admin）。
+ * 命令注册表：entry.* / stats.* / type.* / field.* / book.* / tag.* / user.* / plugin.*（admin）。
  * 业务命令与 admin 命令同一通道（统一调用协议）。
  * admin 注入时（常驻宿主），plugin.* 全集 + host.* 生效；否则仅冷引导子集。
- * user.* / snapshot.* 是薄转发：真实实现在服务提供者插件（不在场 → SERVICE_UNAVAILABLE）。
+ * user.* / tag.* 是薄转发：真实实现在服务提供者插件（不在场 → SERVICE_UNAVAILABLE）。
  */
 export function registerCoreCommands(deps: {
   dispatcher: Dispatcher
@@ -20,11 +28,11 @@ export function registerCoreCommands(deps: {
   registry: Registry
   pluginHost: PluginHost
   services: ServiceRegistry
-  storage: StorageProvider
+  books: BookProvider
   admin?: PluginAdminAPI
   hostControl?: HostControlAPI
 }): void {
-  const { dispatcher, ledger, registry, pluginHost, services, storage, admin, hostControl } = deps
+  const { dispatcher, ledger, registry, pluginHost, services, books, admin, hostControl } = deps
 
   const entryFilter = (payload: any) => (payload ? parseOrThrow(listEntriesSchema, payload, 'filter') : undefined)
 
@@ -79,6 +87,85 @@ export function registerCoreCommands(deps: {
     return def
   })
 
+  // ---- book.*：Book Core 是完整项目状态的唯一业务入口 ----
+  dispatcher.register('book.create', (payload) => books.create({ name: requireString(payload?.name, 'name') }))
+  dispatcher.register('book.list', () => books.list())
+  dispatcher.register('book.get', (payload) => books.get(requireString(payload?.id, 'id')))
+  dispatcher.register('book.current', () => books.current())
+  dispatcher.register('book.delete', async (payload) => {
+    const id = requireString(payload?.id, 'id')
+    await books.delete(id)
+    return { deleted: id }
+  })
+  dispatcher.register('book.switch', async (payload) => {
+    const result = await books.switch(requireString(payload?.id, 'id'))
+    // 账本数据快照可能替换注册表表；立即重建内存视图。
+    registry.load()
+    return result
+  })
+
+  // ---- tag.*：薄转发到 'tags' 服务（plugin-core-types 提供） ----
+  // 绑定只接受 tagId；标签组始终由标签所属关系反查，避免 book_tags 冗余 groupId。
+  dispatcher.register('tag-group.create', (payload) =>
+    invokeTagService(() => requireTagService(services).createGroup({ name: requireString(payload?.name, 'name') })),
+  )
+  dispatcher.register('tag-group.list', () => invokeTagService(() => requireTagService(services).listGroups()))
+  dispatcher.register('tag-group.get', (payload) =>
+    invokeTagService(() => requireTagService(services).getGroup(requireString(payload?.id, 'id'))),
+  )
+  dispatcher.register('tag-group.update', (payload) =>
+    invokeTagService(() => requireTagService(services).updateGroup({
+      id: requireString(payload?.id, 'id'),
+      name: requireString(payload?.name, 'name'),
+    })),
+  )
+  dispatcher.register('tag-group.delete', async (payload) => {
+    const id = requireString(payload?.id, 'id')
+    await invokeTagService(() => requireTagService(services).deleteGroup(id))
+    return { deleted: id }
+  })
+  dispatcher.register('tag.create', (payload) =>
+    invokeTagService(() => requireTagService(services).createTag({
+      groupId: requireString(payload?.groupId, 'groupId'),
+      name: requireString(payload?.name, 'name'),
+    })),
+  )
+  dispatcher.register('tag.list', (payload) =>
+    invokeTagService(() => requireTagService(services).listTags(
+      typeof payload?.groupId === 'string' && payload.groupId !== '' ? { groupId: payload.groupId } : undefined,
+    )),
+  )
+  dispatcher.register('tag.get', (payload) =>
+    invokeTagService(() => requireTagService(services).getTag(requireString(payload?.id, 'id'))),
+  )
+  dispatcher.register('tag.update', (payload) =>
+    invokeTagService(() => requireTagService(services).updateTag({
+      id: requireString(payload?.id, 'id'),
+      ...(payload?.groupId !== undefined ? { groupId: requireString(payload.groupId, 'groupId') } : {}),
+      ...(payload?.name !== undefined ? { name: requireString(payload.name, 'name') } : {}),
+    })),
+  )
+  dispatcher.register('tag.delete', async (payload) => {
+    const id = requireString(payload?.id, 'id')
+    await invokeTagService(() => requireTagService(services).deleteTag(id))
+    return { deleted: id }
+  })
+  dispatcher.register('book.tag.bind', (payload) =>
+    invokeTagService(() => requireTagService(services).bindBookTags({
+      bookId: requireString(payload?.bookId, 'bookId'),
+      tagIds: requireStringArray(payload?.tagIds, 'tagIds'),
+    })),
+  )
+  dispatcher.register('book.tag.unbind', (payload) =>
+    invokeTagService(() => requireTagService(services).unbindBookTags({
+      bookId: requireString(payload?.bookId, 'bookId'),
+      tagIds: requireStringArray(payload?.tagIds, 'tagIds'),
+    })),
+  )
+  dispatcher.register('book.tag.list', (payload) =>
+    invokeTagService(() => requireTagService(services).listBookTags(requireString(payload?.bookId ?? payload?.id, 'bookId'))),
+  )
+
   // ---- user.*：薄转发到 'user' 服务（plugin-user 提供；不在场则明确降级） ----
   dispatcher.register('user.get', (payload) => {
     const svc = requireUserService(services)
@@ -88,50 +175,6 @@ export function registerCoreCommands(deps: {
     return user
   })
   dispatcher.register('user.list', () => requireUserService(services).listUsers())
-
-  // ---- snapshot.*：薄转发到 'snapshot' 服务（plugin-snapshot 提供） ----
-  dispatcher.register('snapshot.create', (payload) => {
-    const svc = requireSnapshotService(services)
-    const scope = payload?.scope === 'book' ? 'book' : 'full'
-    const bookId = typeof payload?.bookId === 'string' && payload.bookId !== '' ? payload.bookId : 'default'
-    return svc.create(scope, scope === 'book' ? bookId : undefined)
-  })
-  dispatcher.register('snapshot.list', () => requireSnapshotService(services).list())
-  dispatcher.register('snapshot.restore', async (payload) => {
-    const svc = requireSnapshotService(services)
-    const file = requireString(payload?.file ?? payload?.path, 'file')
-    try {
-      const result = await svc.restore(file)
-      // 回迁可能整表替换了 type_defs/field_defs：内核注册表重载（插件/用户定义均持久化于表）
-      registry.load()
-      return result
-    } catch (e) {
-      throw withCode(e, 'SNAPSHOT_NOT_FOUND', `snapshot restore failed`)
-    }
-  })
-
-  // ---- Storage Core 快照：完整 SQLite 快照独立于 plugin-snapshot，可零插件使用 ----
-  dispatcher.register('storage.snapshot.create', () => storage.createSnapshot())
-  dispatcher.register('storage.snapshot.list', () => storage.listSnapshots())
-  dispatcher.register('storage.snapshot.delete', async (payload) => {
-    const id = requireString(payload?.id, 'id')
-    try {
-      await storage.deleteSnapshot(id)
-      return { deleted: id }
-    } catch (error) {
-      throw withCode(error, 'SNAPSHOT_NOT_FOUND', `snapshot delete failed`)
-    }
-  })
-  dispatcher.register('storage.snapshot.switch', async (payload) => {
-    try {
-      const result = await storage.switchSnapshot(requireString(payload?.id, 'id'))
-      // 完整快照可能替换元数据表，立即使 Registry 回到快照对应的内存状态。
-      registry.load()
-      return result
-    } catch (error) {
-      throw withCode(error, 'SNAPSHOT_NOT_FOUND', `snapshot switch failed`)
-    }
-  })
 
   // ---- 插件管理（admin 命令；管理入口不唯一：任何白名单特权插件共用） ----
   dispatcher.register('plugin.list', () => (admin ? admin.list() : pluginHost.list()))
@@ -186,7 +229,6 @@ export function registerCoreCommands(deps: {
 type CapabilityDescription = Omit<CommandDescriptor, 'name'>
 
 const FILTER_QUERY = {
-  bookId: 'string',
   direction: 'string',
   type: 'string',
   recorder: 'string',
@@ -208,7 +250,6 @@ const ADD_ENTRY_SCHEMA = {
     occurredAt: { type: 'number' },
     extra: { type: 'object' },
     strictExtra: { type: 'boolean' },
-    bookId: { type: 'string' },
   },
 } satisfies Record<string, unknown>
 
@@ -264,23 +305,45 @@ const CAPABILITIES: Record<string, CapabilityDescription> = {
     cli: { command: 'field list' }, http: { method: 'GET', path: '/fields', query: { scope: 'string', includeUnavailable: 'boolean' } }, mcp: { tool: 'list_fields' },
   }),
   'field.get': capability('field', 'get', '读取动态字段', { http: { method: 'GET', path: '/fields/:key' } }),
+  'book.create': capability('book', 'create', '保存当前完整项目状态为账本', {
+    cli: { command: 'book create' }, http: { method: 'POST', path: '/books', successStatus: 201 },
+  }),
+  'book.list': capability('book', 'list', '列出账本', { cli: { command: 'book list' }, http: { method: 'GET', path: '/books' } }),
+  'book.get': capability('book', 'get', '读取账本', { http: { method: 'GET', path: '/books/:id' } }),
+  'book.current': capability('book', 'current', '读取当前账本', { cli: { command: 'book current' }, http: { method: 'GET', path: '/books/current' } }),
+  'book.delete': capability('book', 'delete', '删除非当前账本', { cli: { command: 'book delete' }, http: { method: 'DELETE', path: '/books/:id' } }),
+  'book.switch': capability('book', 'switch', '切换完整项目状态到指定账本', {
+    cli: { command: 'book switch' }, http: { method: 'POST', path: '/books/:id/switch' },
+  }),
+  'tag-group.create': capability('tag-group', 'create', '创建标签组', {
+    cli: { command: 'tag group create' }, http: { method: 'POST', path: '/tag-groups', successStatus: 201 },
+  }),
+  'tag-group.list': capability('tag-group', 'list', '列出标签组', {
+    cli: { command: 'tag group list' }, http: { method: 'GET', path: '/tag-groups' },
+  }),
+  'tag-group.get': capability('tag-group', 'get', '读取标签组', { http: { method: 'GET', path: '/tag-groups/:id' } }),
+  'tag-group.update': capability('tag-group', 'update', '更新标签组', { http: { method: 'PATCH', path: '/tag-groups/:id' } }),
+  'tag-group.delete': capability('tag-group', 'delete', '删除标签组及其标签绑定', { http: { method: 'DELETE', path: '/tag-groups/:id' } }),
+  'tag.create': capability('tag', 'create', '在标签组中创建标签', {
+    cli: { command: 'tag create' }, http: { method: 'POST', path: '/tags', successStatus: 201 },
+  }),
+  'tag.list': capability('tag', 'list', '列出标签', {
+    cli: { command: 'tag list' }, http: { method: 'GET', path: '/tags', query: { groupId: 'string' } },
+  }),
+  'tag.get': capability('tag', 'get', '读取标签', { http: { method: 'GET', path: '/tags/:id' } }),
+  'tag.update': capability('tag', 'update', '更新或移动标签', { http: { method: 'PATCH', path: '/tags/:id' } }),
+  'tag.delete': capability('tag', 'delete', '删除标签及其账目绑定', { http: { method: 'DELETE', path: '/tags/:id' } }),
+  'book.tag.bind': capability('book.tag', 'bind', '为账本绑定标签', {
+    cli: { command: 'book tag bind' }, http: { method: 'POST', path: '/books/:bookId/tags' },
+  }),
+  'book.tag.list': capability('book.tag', 'list', '读取账本标签及反查标签组', {
+    cli: { command: 'book tag list' }, http: { method: 'GET', path: '/books/:bookId/tags' },
+  }),
+  'book.tag.unbind': capability('book.tag', 'unbind', '解除账本标签绑定', {
+    cli: { command: 'book tag unbind' }, http: { method: 'DELETE', path: '/books/:bookId/tags' },
+  }),
   'user.get': capability('user', 'get', '读取身份', { cli: { command: 'user get' }, http: { method: 'GET', path: '/users/:id' } }),
   'user.list': capability('user', 'list', '列出身份', { cli: { command: 'user list' }, http: { method: 'GET', path: '/users' } }),
-  'snapshot.create': capability('snapshot', 'create', '创建存储快照', { cli: { command: 'snapshot create' }, http: { method: 'POST', path: '/snapshots', successStatus: 201 } }),
-  'snapshot.list': capability('snapshot', 'list', '列出存储快照', { cli: { command: 'snapshot list' }, http: { method: 'GET', path: '/snapshots' } }),
-  'snapshot.restore': capability('snapshot', 'restore', '恢复存储快照', { cli: { command: 'snapshot restore' }, http: { method: 'POST', path: '/snapshots/:file/restore' } }),
-  'storage.snapshot.create': capability('storage.snapshot', 'create', '创建完整存储快照', {
-    cli: { command: 'storage snapshot create' }, http: { method: 'POST', path: '/storage/snapshots', successStatus: 201 },
-  }),
-  'storage.snapshot.list': capability('storage.snapshot', 'list', '列出完整存储快照', {
-    cli: { command: 'storage snapshot list' }, http: { method: 'GET', path: '/storage/snapshots' },
-  }),
-  'storage.snapshot.delete': capability('storage.snapshot', 'delete', '删除完整存储快照', {
-    cli: { command: 'storage snapshot delete' }, http: { method: 'DELETE', path: '/storage/snapshots/:id' },
-  }),
-  'storage.snapshot.switch': capability('storage.snapshot', 'switch', '切换到完整存储快照', {
-    cli: { command: 'storage snapshot switch' }, http: { method: 'POST', path: '/storage/snapshots/:id/switch' },
-  }),
   'plugin.list': capability('plugin', 'list', '列出插件', { cli: { command: 'plugin list' }, http: { method: 'GET', path: '/plugins' } }),
   'plugin.load': capability('plugin', 'load', '加载已安装插件', { cli: { command: 'plugin load' }, http: { method: 'POST', path: '/plugins/:name/load' } }),
   'plugin.unload': capability('plugin', 'unload', '停用插件', { http: { method: 'POST', path: '/plugins/:name/unload' } }),
@@ -317,6 +380,13 @@ function requireString(v: unknown, field: string): string {
   return v
 }
 
+function requireStringArray(v: unknown, field: string): string[] {
+  if (!Array.isArray(v) || v.length === 0 || v.some((item) => typeof item !== 'string' || item.length === 0)) {
+    throw new AppError('VALIDATION_ERROR', `payload.${field} must be a non-empty string array`)
+  }
+  return [...new Set(v)]
+}
+
 function requireUserService(services: ServiceRegistry): UserService {
   const svc = services.get<UserService>('user')
   if (!svc) {
@@ -325,21 +395,34 @@ function requireUserService(services: ServiceRegistry): UserService {
   return svc
 }
 
-function requireSnapshotService(services: ServiceRegistry): SnapshotService {
-  const svc = services.get<SnapshotService>('snapshot')
+function requireTagService(services: ServiceRegistry): TagService {
+  const svc = services.get<TagService>('tags')
   if (!svc) {
-    throw new AppError('SERVICE_UNAVAILABLE', `service "snapshot" is not available (install/enable plugin-snapshot)`)
+    throw new AppError('SERVICE_UNAVAILABLE', `service "tags" is not available (install/enable plugin-core-types)`)
   }
   return svc
 }
 
-/** 服务层携带 code 的错误 → AppError（保持类型化错误码贯穿）；其余原样抛出 */
-function withCode(e: unknown, code: KernelErrorCode, fallbackMessage: string): unknown {
-  const coded = e as { code?: unknown; message?: unknown }
-  if (e instanceof Error && coded.code === code) {
-    return new AppError(code, typeof coded.message === 'string' ? coded.message : fallbackMessage)
+/** 标签插件以 Error.code 表示可预期失败；在内核边界转成统一错误模型。 */
+async function invokeTagService<T>(operation: () => Promise<T> | T): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (error instanceof AppError) throw error
+    const coded = error as { code?: unknown; message?: unknown }
+    const code = coded.code
+    if (
+      error instanceof Error
+      && (code === 'VALIDATION_ERROR'
+        || code === 'TAG_GROUP_NOT_FOUND'
+        || code === 'TAG_GROUP_NAME_TAKEN'
+        || code === 'TAG_NOT_FOUND'
+        || code === 'TAG_NAME_TAKEN')
+    ) {
+      throw new AppError(code, typeof coded.message === 'string' ? coded.message : 'tag service request failed')
+    }
+    throw error
   }
-  return e
 }
 
 function parseTypeRegistration(payload: any) {

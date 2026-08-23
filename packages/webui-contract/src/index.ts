@@ -60,7 +60,6 @@ export type Direction = 'income' | 'expense'
 
 export interface EntryDTO {
   id: string
-  bookId: string
   direction: Direction
   amountMinor: number
   currency: string

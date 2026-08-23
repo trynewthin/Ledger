@@ -143,23 +143,20 @@ describe('resident host', () => {
     expect(added.result.data.source).toBe('cli')
   })
 
-  it('Storage Core snapshots work without loading plugin-snapshot', async () => {
+  it('Book Core switches complete state without loading a snapshot plugin', async () => {
     const before = dataOf(await dispatch('entry.list', { includeVoided: true })).total
-    const created = dataOf(await dispatch('storage.snapshot.create'))
-    expect(created.id).toMatch(/^snapshot-/)
+    const created = dataOf(await dispatch('book.create', { name: 'host-switch' }))
+    expect(created.name).toBe('host-switch')
 
     await dispatch('entry.add', { direction: 'expense', amountMinor: 7, currency: 'CNY' })
     expect(dataOf(await dispatch('entry.list', { includeVoided: true })).total).toBe(before + 1)
 
-    const switched = dataOf(await dispatch('storage.snapshot.switch', { id: created.id }))
-    expect(switched.snapshot.id).toBe(created.id)
+    const switched = dataOf(await dispatch('book.switch', { id: created.id }))
+    expect(switched.book.id).toBe(created.id)
     expect(dataOf(await dispatch('entry.list', { includeVoided: true })).total).toBe(before)
 
-    await dispatch('storage.snapshot.delete', { id: created.id })
-    const remaining = dataOf(await dispatch('storage.snapshot.list'))
-    expect(remaining.some((item: any) => item.id === created.id)).toBe(false)
-    const missing = await dispatch('storage.snapshot.switch', { id: created.id })
-    expect(missing).toMatchObject({ ok: false, error: { code: 'SNAPSHOT_NOT_FOUND' } })
+    const currentDelete = await dispatch('book.delete', { id: created.id })
+    expect(currentDelete).toMatchObject({ ok: false, error: { code: 'BOOK_ACTIVE' } })
   })
 
   it('CLI hybrid mode prefers RPC when host is alive', { timeout: 30_000 }, async () => {

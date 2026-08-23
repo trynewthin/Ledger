@@ -9,12 +9,12 @@
     { "path": "./packages/http-rpc" },
     { "path": "./packages/webui-contract" },
     { "path": "./plugins/core-types" },
+    { "path": "./plugins/description" },
     { "path": "./plugins/cli" },
     { "path": "./plugins/http" },
     { "path": "./plugins/webui" },
     { "path": "./plugins/user" },
     { "path": "./plugins/dataviews" },
-    { "path": "./plugins/snapshot" },
     { "path": "./plugins/mcp" }
   ]
 }

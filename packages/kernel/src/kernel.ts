@@ -1,6 +1,7 @@
 import type { HostControlAPI, LedgerPlugin, PluginAdminAPI } from '@ledger/plugin-contract'
 import type { EntryRepository, MetadataStore } from '@ledger/domain'
 import { registerCoreCommands } from './commands.js'
+import { BookCore } from './books.js'
 import { Dispatcher } from './dispatcher.js'
 import { EventBus } from './event-bus.js'
 import { LedgerService } from './ledger.js'
@@ -10,9 +11,11 @@ import { Registry } from './registry.js'
 import { ServiceRegistry } from './services.js'
 import {
   noopConfigProvider,
+  noopBookProvider,
   noopProjectInitializationProvider,
   noopStorageProvider,
   type ConfigProvider,
+  type BookProvider,
   type ProjectInitializationProvider,
   type StorageProvider,
 } from './core-services.js'
@@ -25,6 +28,7 @@ export interface KernelConfig {
   configProvider?: ConfigProvider
   storageProvider?: StorageProvider
   initializationProvider?: ProjectInitializationProvider
+  bookProvider?: BookProvider
   projectRoot?: string
 }
 
@@ -44,6 +48,7 @@ export interface Kernel {
   config: ConfigProvider
   storage: StorageProvider
   initialization: ProjectInitializationProvider
+  books: BookProvider
   loadPlugins(plugins: LedgerPlugin[]): Promise<void>
   shutdown(): Promise<void>
 }
@@ -59,6 +64,14 @@ export function createKernel(opts: KernelOptions): Kernel {
   const configProvider = config.configProvider ?? noopConfigProvider
   const storageProvider = config.storageProvider ?? noopStorageProvider
   const initializationProvider = config.initializationProvider ?? noopProjectInitializationProvider
+  const bookProvider = config.bookProvider ?? (config.storageProvider
+    ? new BookCore({
+      storage: storageProvider,
+      config: configProvider,
+      dataDir: config.dataDir ?? '.',
+      projectRoot: config.projectRoot ?? initializationProvider.projectRoot ?? '.',
+    })
+    : noopBookProvider)
   const ledger = new LedgerService(opts.repo, registry, events, log)
   const dispatcher = new Dispatcher(log)
   const pluginHost = new PluginHost(
@@ -70,6 +83,7 @@ export function createKernel(opts: KernelOptions): Kernel {
       config: configProvider,
       storage: storageProvider,
       initialization: initializationProvider,
+      books: bookProvider,
       dispatcher,
       log,
     },
@@ -87,7 +101,7 @@ export function createKernel(opts: KernelOptions): Kernel {
     registry,
     pluginHost,
     services,
-    storage: storageProvider,
+    books: bookProvider,
     admin: config.pluginsAdmin,
     hostControl: config.hostControl,
   })
@@ -101,6 +115,7 @@ export function createKernel(opts: KernelOptions): Kernel {
     config: configProvider,
     storage: storageProvider,
     initialization: initializationProvider,
+    books: bookProvider,
     loadPlugins: (plugins) => pluginHost.loadAll(plugins),
     shutdown: async () => {
       for (const info of pluginHost.list()) {
