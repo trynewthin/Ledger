@@ -1,0 +1,43 @@
+name: Deploy manually
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Immutable GHCR reference (ghcr.io/trynewthin/ledger@sha256:...)'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: ledger-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate image
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: '[[ "$IMAGE" =~ ^ghcr\.io/trynewthin/ledger@sha256:[a-f0-9]{64}$ ]]'
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Pull, back up, and deploy
+        env:
+          IMAGE: ${{ inputs.image }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "/opt/ledger/update.sh '$IMAGE'"
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

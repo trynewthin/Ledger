@@ -1,5 +1,0 @@
-{
-  "name": "plugin-core-types",
-  "main": "./dist/index.js",
-  "isolation": "inprocess"
-}

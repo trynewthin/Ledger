@@ -1,5 +1,0 @@
-{
-  "name": "plugin-http",
-  "main": "./dist/index.js",
-  "isolation": "worker"
-}

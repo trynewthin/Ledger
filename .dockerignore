@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+**/node_modules
+**/dist
+**/.e2e
+**/test-results
+**/playwright-report
+data
+backups
+deploy/secrets
+deploy/data
+deploy/backups
+bin
+*.log

@@ -1,5 +1,0 @@
-{
-  "name": "plugin-user",
-  "main": "./dist/index.js",
-  "isolation": "inprocess"
-}

@@ -1,0 +1,32 @@
+services:
+  ledger:
+    image: ${LEDGER_IMAGE:?Set LEDGER_IMAGE to a published image tag or digest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${LEDGER_PORT:-18082}:8080"
+    environment:
+      LEDGER_ORIGIN: ${LEDGER_ORIGIN:?Set the public https origin}
+      LEDGER_ADMIN_USER: ${LEDGER_ADMIN_USER:-owner}
+      LEDGER_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+    secrets:
+      - admin_password
+    volumes:
+      - ledger_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    stop_grace_period: 20s
+secrets:
+  admin_password:
+    file: ./secrets/admin_password
+volumes:
+  ledger_data:
