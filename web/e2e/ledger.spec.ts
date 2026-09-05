@@ -7,16 +7,14 @@ test("personal ledger, assets, categories, MCP and device sessions", async ({
   const pageErrors: string[] = []
   page.on("pageerror", (error) => pageErrors.push(error.message))
   await page.goto("/")
-  await expect(
-    page.getByRole("heading", { name: "打开你的账本" })
-  ).toBeVisible()
+  await expect(page.getByRole("heading", { name: "登录 Ledger" })).toBeVisible()
   await page.getByLabel("账号", { exact: true }).fill("test-owner")
   await page
     .getByLabel("密码", { exact: true })
     .fill("browser-test-password-1234")
   await page.getByRole("button", { name: "登录", exact: true }).click()
   await expect(
-    page.getByRole("heading", { name: "把生活，记清楚。" })
+    page.getByRole("heading", { name: "今天记点什么？" })
   ).toBeVisible()
   await page.getByLabel("金额", { exact: true }).fill("35.50")
   await page
@@ -46,6 +44,7 @@ test("personal ledger, assets, categories, MCP and device sessions", async ({
   await expect(page.getByRole("dialog")).toContainText("优惠券抵扣")
   await expect(page.getByRole("dialog")).toContainText("重复记账")
   await page.getByRole("button", { name: "关闭", exact: true }).click()
+  await page.evaluate(() => window.scrollTo(0, 0))
   await page.screenshot({
     path: "test-results/dashboard-desktop.png",
     fullPage: true,
@@ -119,7 +118,7 @@ test("personal ledger, assets, categories, MCP and device sessions", async ({
     .fill("browser-test-password-1234")
   await second.getByRole("button", { name: "登录", exact: true }).click()
   await expect(
-    second.getByRole("heading", { name: "把生活，记清楚。" })
+    second.getByRole("heading", { name: "今天记点什么？" })
   ).toBeVisible()
   await page.reload()
   await page.getByRole("button", { name: "连接与安全", exact: true }).click()
@@ -130,7 +129,7 @@ test("personal ledger, assets, categories, MCP and device sessions", async ({
     .click()
   await second.reload()
   await expect(
-    second.getByRole("heading", { name: "打开你的账本" })
+    second.getByRole("heading", { name: "登录 Ledger" })
   ).toBeVisible()
   await other.close()
   await page.getByRole("button", { name: "日常账本", exact: true }).click()

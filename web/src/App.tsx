@@ -6,7 +6,7 @@ import {
   SquaresFourIcon,
   PlugsConnectedIcon,
   SignOutIcon,
-  BookOpenIcon,
+  SidebarSimpleIcon,
   ArrowRightIcon,
 } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,7 @@ export default function App() {
   const [user, setUser] = useState<string | null>(null)
   const [checking, setChecking] = useState(true)
   const [page, setPage] = useState("ledger")
+  const [collapsed, setCollapsed] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
   const [revision, setRevision] = useState(0)
   const [loadError, setLoadError] = useState("")
@@ -66,7 +67,7 @@ export default function App() {
     { id: "settings", title: "连接与安全", icon: PlugsConnectedIcon },
   ]
   return (
-    <div className="app-shell">
+    <div className={`app-shell${collapsed ? "sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <a
           className="brand"
@@ -76,12 +77,9 @@ export default function App() {
             setPage("ledger")
           }}
         >
-          <span className="brand-mark">
-            <BookOpenIcon weight="bold" size={21} />
-          </span>
-          Ledger<span className="brand-dot">.</span>
+          Ledger
         </a>
-        <div className="sidebar-label">个人财务空间</div>
+        <div className="sidebar-label">工作空间</div>
         <nav aria-label="主导航">
           {nav.map((n) => (
             <button
@@ -90,16 +88,12 @@ export default function App() {
               aria-current={page === n.id ? "page" : undefined}
               onClick={() => setPage(n.id)}
             >
-              <n.icon size={20} weight={page === n.id ? "fill" : "regular"} />
+              <n.icon size={20} weight="regular" />
               {n.title}
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="local-note">
-            <span />
-            每一笔，都有迹可循
-          </div>
           <div className="profile">
             <span className="avatar">{user.slice(0, 1).toUpperCase()}</span>
             <div>
@@ -121,27 +115,41 @@ export default function App() {
           </div>
         </div>
       </aside>
-      <main>
-        {loadError && (
-          <p className="error">
-            {loadError}
-            <button onClick={refresh}>重试</button>
-          </p>
-        )}
-        {page === "ledger" && (
-          <Dashboard
-            categories={categories}
-            revision={revision}
-            refresh={refresh}
-          />
-        )}
-        {page === "assets" && <Assets />}
-        {page === "categories" && (
-          <Categories categories={categories} refresh={refresh} />
-        )}
-        {page === "settings" && <Settings logout={() => setUser(null)} />}
-        <footer>Ledger · 留下记录，留出心力。</footer>
-      </main>
+      <div className="workspace">
+        <header className="workspace-header">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
+            aria-expanded={!collapsed}
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            <SidebarSimpleIcon size={21} />
+          </Button>
+          <span>{nav.find((n) => n.id === page)?.title}</span>
+          <span className="workspace-private">个人空间</span>
+        </header>
+        <main>
+          {loadError && (
+            <p className="error">
+              {loadError}
+              <button onClick={refresh}>重试</button>
+            </p>
+          )}
+          {page === "ledger" && (
+            <Dashboard
+              categories={categories}
+              revision={revision}
+              refresh={refresh}
+            />
+          )}
+          {page === "assets" && <Assets />}
+          {page === "categories" && (
+            <Categories categories={categories} refresh={refresh} />
+          )}
+          {page === "settings" && <Settings logout={() => setUser(null)} />}
+        </main>
+      </div>
     </div>
   )
 }
@@ -157,29 +165,7 @@ function Login({
   const { busy, error, run } = useTask()
   return (
     <div className="login-page">
-      <div className="login-art">
-        <a className="brand">
-          <span className="brand-mark">
-            <BookOpenIcon size={22} />
-          </span>
-          Ledger.
-        </a>
-        <div>
-          <p className="eyebrow">A LITTLE CLARITY, EVERY DAY</p>
-          <h1>
-            生活里的每一笔，
-            <br />
-            都值得被好好安放。
-          </h1>
-          <p>记下日常，慢慢看清自己的财务生活。</p>
-          <div className="decorative-chart" aria-hidden="true">
-            {[25, 45, 30, 65, 48, 77, 60, 95, 78, 110, 93, 130].map((h, i) => (
-              <i key={i} style={{ height: h }} />
-            ))}
-          </div>
-        </div>
-        <small>你的个人财务空间</small>
-      </div>
+      <div className="login-brand">Ledger</div>
       <div className="login-form-wrap">
         <form
           className="login-form"
@@ -191,9 +177,8 @@ function Login({
             })
           }}
         >
-          <p className="eyebrow">WELCOME BACK</p>
-          <h2>打开你的账本</h2>
-          <p className="muted">登录后，从简单的一笔开始。</p>
+          <h2>登录 Ledger</h2>
+          <p className="muted">登录你的个人财务空间。</p>
           <Field label="账号">
             <Input
               required

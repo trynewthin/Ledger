@@ -299,11 +299,10 @@ export function Dashboard({
   )
   return (
     <>
-      <div className="page-title">
+      <div className="page-title composer-title">
         <div>
-          <p className="eyebrow">YOUR EVERYDAY LEDGER</p>
-          <h1>把生活，记清楚。</h1>
-          <p className="muted">从今天的一笔开始。</p>
+          <h1>今天记点什么？</h1>
+          <p className="muted">记录一笔收支。</p>
         </div>
         <span className="today">{today().replaceAll("-", " / ")}</span>
       </div>
@@ -389,7 +388,7 @@ export function Dashboard({
           <h2>
             <span>¥</span> {report ? money(report.income) : "—"}
           </h2>
-          <p>独立记录每一份进账</p>
+          <p>所选期间的收入总额</p>
         </section>
         <section className="stat">
           <span>有效记账</span>
@@ -447,7 +446,7 @@ export function Dashboard({
         </section>
         <section className="panel chart-panel">
           <div className="row-between">
-            <h3>钱花在哪里</h3>
+            <h3>分类支出</h3>
             <small>按类别</small>
           </div>
           {cats.length ? (
@@ -468,7 +467,7 @@ export function Dashboard({
               ))}
             </div>
           ) : (
-            <Empty>记下一笔，分布就会出现在这里</Empty>
+            <Empty>暂无分类支出</Empty>
           )}
         </section>
       </div>

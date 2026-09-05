@@ -181,9 +181,8 @@ export function Assets() {
     <>
       <div className="page-title">
         <div>
-          <p className="eyebrow">A BIGGER PICTURE</p>
           <h1>资产概况</h1>
-          <p className="muted">按自己的节奏，更新余额。</p>
+          <p className="muted">管理资产、负债与余额快照。</p>
         </div>
         <Button onClick={() => setEdit("new")}>
           <PlusIcon />
@@ -352,9 +351,8 @@ export function Categories({
     <>
       <div className="page-title">
         <div>
-          <p className="eyebrow">EVERYTHING IN ITS PLACE</p>
           <h1>分类管理</h1>
-          <p className="muted">两级分类，让每一笔都有归处。</p>
+          <p className="muted">管理记账使用的两级分类。</p>
         </div>
         <Button
           onClick={() =>
@@ -516,7 +514,6 @@ export function Settings({ logout }: { logout: () => void }) {
     <>
       <div className="page-title">
         <div>
-          <p className="eyebrow">CONNECTED, ON YOUR TERMS</p>
           <h1>连接与安全</h1>
           <p className="muted">管理 AI 访问与登录设备。</p>
         </div>
